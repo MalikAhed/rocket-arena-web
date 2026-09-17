@@ -10,7 +10,7 @@ The existing camera requires local car index zero; the client explicitly permute
 
 ## Queues and sessions
 
-Six public queues separate Casual/Ranked and team size. One identity may have one queue/reservation/match. Async validation cannot resurrect a cancelled search. Full human rosters must acknowledge readiness within 60 seconds; no AI replacement or human backfill is implemented. Ranked skill range starts at 100 points, expands 25 every 15 seconds, caps at 400. Casual starts at 300, expands 100, caps at 800. Teams minimize rating-sum differences. Only the configured region is advertised; measured RTT above 500 ms excludes a new match, not as evidence of cheating. Private rooms/parties are not implemented.
+Six public queues separate Casual/Ranked and team size. One identity may have one queue/reservation/match. Async validation cannot resurrect a cancelled search. Full human rosters must acknowledge readiness within 60 seconds; no AI replacement or human backfill is implemented. Ranked skill range starts at 100 points, expands 25 every 15 seconds, caps at 400. Casual starts at 300, expands 100, caps at 800. Teams minimize rating-sum differences. Only the configured region is advertised; measured RTT above 500 ms excludes a new match, not as evidence of cheating. Private invite rooms use the same identity lock, with server-owned membership/teams, host-only start, expiry and reconnect grace. They are unrated Casual matches; persistent parties and Ranked premades are not implemented. See `PRIVATE_ROOMS_AND_RECOVERY.md`.
 
 Guest identity uses random server-issued bearer tokens, not names; guest names are validated and inserted as text nodes. Guest sessions/casual estimates are temporary and do not survive a server restart. Accounts are Supabase-verified before Ranked queue entry and ready admission. Provider recovery is delegated to GitHub. Account ratings and history persist in PostgreSQL; browser storage is not their authority.
 
@@ -27,10 +27,10 @@ Guest identity uses random server-issued bearer tokens, not names; guest names a
 | AFK | Warn at 150 seconds, remove at 180 without nonzero input |
 | Forfeit | Unanimous team vote; Ranked unlocks after one minute |
 | Confirmed server stall over two seconds | Infrastructure no-contest, never a cheating penalty |
-| Restart/lost database lease | Cancel unfinished persisted matches; preserve committed outcomes |
+| Restart/lost database lease | Replay journalled outcomes after reacquiring the lease; cancel other unfinished matches |
 | Database failure on completion | Result pending, identity remains locked; retry every three seconds |
 
-Completed eligible Ranked abandonments receive escalating cooldowns (5/10/20/40/up to 60 minutes within 24 hours), not arbitrary extra MMR deductions. Infrastructure cancellation applies none. Uncommitted outcomes have no durable outbox: a process crash during a persistence outage can make that unfinished match no-contest after restart. This is an explicit beta reliability limitation.
+Completed eligible Ranked abandonments receive escalating cooldowns (5/10/20/40/up to 60 minutes within 24 hours), not arbitrary extra MMR deductions. Infrastructure cancellation applies none. A validated, immutable outcome is committed to `arena.pending_results` before ratings are changed. Startup replays this journal idempotently before cancelling unstaged games. A process crash during a database outage **before the first journal write commits** can still leave the unfinished match no-contest; journal durability does not imply seamless simulation migration or protection against database data loss.
 
 ## Database and operational boundaries
 
