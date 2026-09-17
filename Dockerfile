@@ -25,7 +25,7 @@ COPY server ./server
 COPY src/physics ./src/physics
 COPY src/core/class-fields.js ./src/core/class-fields.js
 COPY src/match/session.js ./src/match/session.js
-COPY src/online/protocol.js ./src/online/protocol.js
+COPY src/online/protocol.js src/online/timing.js ./src/online/
 COPY public/physics ./public/physics
 COPY public/assets/arena/collision ./public/assets/arena/collision
 COPY tools/db-migrate.mjs ./tools/db-migrate.mjs
