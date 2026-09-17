@@ -1,0 +1,63 @@
+# Separate FREE beta resources, never the current GitHub Pages deployment.
+# Review plan labels before creation. Do not add a payment method or upgrade.
+services:
+  - type: web
+    name: rocket-arena-online-beta
+    runtime: node
+    branch: online-play
+    plan: free
+    region: frankfurt
+    autoDeployTrigger: off
+    buildCommand: npm ci --omit=dev
+    startCommand: sh -c 'if [ -n "$DATABASE_URL" ]; then node tools/db-migrate.mjs || exit 1; fi; exec node server/index.mjs'
+    # Liveness permits replacement startup; readiness stays closed until the
+    # old process releases the exclusive DB lease. Deployment cancels matches.
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: NODE_ENV
+        value: production
+      - key: REGION
+        value: frankfurt
+      - key: MAX_ROOMS
+        value: '1'
+      - key: MAX_CONNECTIONS
+        value: '24'
+      - key: RECONNECT_GRACE_SECONDS
+        value: '30'
+      - key: DATABASE_SSL
+        value: verify-full
+      - key: SEASON_ID
+        value: beta-1
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+  - type: web
+    name: rocket-arena-online-preview
+    runtime: static
+    branch: online-play
+    autoDeployTrigger: off
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: ONLINE_SERVER_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+    headers:
+      - path: /assets/online/config.json
+        name: Cache-Control
+        value: no-store
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff

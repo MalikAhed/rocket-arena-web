@@ -1,11 +1,10 @@
 name: Online play verification
 
-# Temporary, finite integration of the reviewed text patch. On success the
-# source is committed on online-play and this restores read-only verification.
 on:
   push:
     branches: [online-play]
 
+# Temporary branch-only verified source integration; restores read-only CI.
 permissions:
   contents: write
 
@@ -21,7 +20,7 @@ jobs:
   verify:
     if: github.ref == 'refs/heads/online-play'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -44,7 +43,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Apply reviewed integration without overwriting unrelated files
+      - name: Apply reviewed source integration on online-play only
         run: |
           test "$GITHUB_REF" = refs/heads/online-play
           node --input-type=module <<'JS'
@@ -58,26 +57,41 @@ jobs:
           const path='server/native.mjs';
           fs.writeFileSync(path,fs.readFileSync(path,'utf8').replace('this.module._physics_destroyArena?.();','this.module._physics_destroy?.();'));
           JS
+          node tools/finish-online-integration.mjs
       - name: Install locked dependencies
         run: npm ci
-      - name: Generate original editable artwork
+      - name: Generate original vector artwork
         run: node tools/render-online-art.mjs
       - name: Prepare evidence directory
         run: mkdir -p evidence
-      - name: Verify protected assets
-        run: npm run verify | tee evidence/verify.log
-      - name: Existing bot regression tests
-        run: npm test | tee evidence/bots.log
-      - name: Online transport, rules, security and real PostgreSQL tests
+      - name: Verify unchanged protected assets and existing bots
+        run: |
+          npm run verify | tee evidence/verify.log
+          npm test | tee evidence/bots.log
+      - name: Online transport, failure, security and real PostgreSQL tests
         run: npm run test:online | tee evidence/online-tests.log
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Render original mode artwork from existing game assets
+        run: node tools/render-online-scenes.mjs | tee evidence/artwork.log
       - name: Build without deploying
         run: npm run build | tee evidence/build.log
         env:
           ROCKET_ARENA_BASE_PATH: /rocket-arena-web
-      - name: Install test browser
-        run: npx playwright install --with-deps chromium
-      - name: Independent browser end-to-end evidence
+      - name: Independent browser end-to-end and offline regression evidence
         run: node tests/online/browser.mjs | tee evidence/browser.log
+      - name: Container build and startup smoke tests
+        run: |
+          docker compose config --quiet
+          docker build --target server -t rocket-online-server . > evidence/docker-server.log 2>&1
+          docker build --target frontend -t rocket-online-frontend . > evidence/docker-frontend.log 2>&1
+          docker run -d --name online-server-check -p 18080:8080 -e NODE_ENV=development rocket-online-server
+          docker run -d --name online-frontend-check -p 18081:4173 rocket-online-frontend
+          trap 'docker rm -f online-server-check online-frontend-check' EXIT
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:18080/readyz > evidence/docker-ready.json && break || sleep 1; done
+          curl -fsS http://127.0.0.1:18080/readyz
+          curl -fsS http://127.0.0.1:18081/ > /dev/null
+          curl -fsS http://127.0.0.1:18081/assets/online/config.json > evidence/docker-frontend-config.json
       - name: Production dependency audit
         run: npm audit --omit=dev --json > evidence/dependency-audit.json
       - name: Commit verified source only to online-play and restore read-only CI
@@ -87,19 +101,22 @@ jobs:
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           import {execFileSync} from 'node:child_process';
-          const workflow=execFileSync('git',['show','2f3dafe832875ebe22767746d70fa1f0a97a2199:.github/workflows/online-play.yml'],{encoding:'utf8'});
-          fs.writeFileSync('.github/workflows/online-play.yml',workflow.replace('permissions:\n','defaults:\n  run:\n    shell: bash\n\npermissions:\n'));
+          let workflow=execFileSync('git',['show','2f3dafe832875ebe22767746d70fa1f0a97a2199:.github/workflows/online-play.yml'],{encoding:'utf8'});
+          workflow=workflow.replace('permissions:\n','defaults:\n  run:\n    shell: bash\n\npermissions:\n');
+          fs.writeFileSync('.github/workflows/online-play.yml',workflow);
+          const files=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/online-edited.json','utf8'));
+          execFileSync('git',['add','--',...files]);
           JS
-          git rm docs/online-play/integration.patch
-          git add index.html src/app/startup.js src/physics/simulation.js src/rendering/world.js src/ui/home-screen.js src/ui/match-menu.js tools/build.mjs tools/serve.mjs server/native.mjs public/assets/online/illustrations.svg public/assets/online/ranks.svg .github/workflows/online-play.yml
+          git rm docs/online-play/integration.patch tools/finish-online-integration.mjs
+          git add index.html src/app/startup.js src/physics/simulation.js src/rendering/world.js src/ui/home-screen.js src/ui/match-menu.js tools/build.mjs tools/serve.mjs server/native.mjs public/assets/online .github/workflows/online-play.yml
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: integrate verified multiplayer into existing game and four-mode menu'
+          git commit -m 'feat: integrate tested multiplayer, failure policies and rendered mode artwork'
           git push origin HEAD:refs/heads/online-play
           git rev-parse HEAD > evidence/commit.txt
       - name: Package exact tested workspace
         if: always()
-        run: tar --exclude=.git --exclude=node_modules --exclude=dist -czf "$RUNNER_TEMP/online-workspace.tgz" .
+        run: tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=.env -czf "$RUNNER_TEMP/online-workspace.tgz" .
       - uses: actions/upload-artifact@v4
         if: always()
         with:

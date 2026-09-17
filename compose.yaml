@@ -1,0 +1,47 @@
+# Local development only. This password is a fixture, not a production secret.
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: arena_dev
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: arena_dev
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [arena_database:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arena_dev -d arena_dev"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  server:
+    build: {context: ., target: server}
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      DATABASE_URL: postgresql://arena_dev:local-development-only@db:5432/arena_dev
+      ALLOWED_ORIGINS: http://localhost:4173,http://127.0.0.1:4173
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+      REGION: local
+      MAX_ROOMS: 1
+      MAX_CONNECTIONS: 24
+    command: ["sh", "-c", "node tools/db-migrate.mjs && exec node server/index.mjs"]
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 25
+  frontend:
+    build:
+      context: .
+      target: frontend
+      args:
+        ONLINE_SERVER_URL: http://127.0.0.1:8080
+        SUPABASE_URL: ${SUPABASE_URL:-}
+        SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+    ports: ["127.0.0.1:4173:4173"]
+volumes:
+  arena_database:

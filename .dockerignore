@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+evidence
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.dump
+*.log
