@@ -1,0 +1,43 @@
+name: Native checkpoint verification
+on:
+  push:
+    branches: [native-checkpoint]
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build optional native checkpoint core from hash-verified recovered source
+        run: |
+          mkdir -p evidence/native-checkpoint
+          docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:4.0.10 node tools/build-network-physics.mjs | tee evidence/native-checkpoint/build.log
+      - name: Verify original assets remain unchanged
+        run: npm run verify
+      - name: Native parity, hidden jump state, pad restoration and invalid-state tests
+        run: node --test tests/netcode/native-checkpoint.mjs | tee evidence/native-checkpoint/tests.log
+      - name: Package candidate and source without publishing or committing binaries
+        if: always()
+        run: |
+          tar --exclude='.git' --exclude='.network-build' -czf /tmp/native-candidate.tgz native tools/build-network-physics.mjs tests/netcode/native-checkpoint.mjs public/physics/rocketsim-network* src/physics/network-core.js evidence/native-checkpoint
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-candidate-${{ github.run_id }}
+          path: |
+            /tmp/native-candidate.tgz
+            evidence/native-checkpoint
+          retention-days: 7
