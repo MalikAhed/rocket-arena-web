@@ -39,9 +39,9 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
       assert.deepEqual(profile.progress.map(p => p.games), [1, 2, 1]);
       assert.equal(profile.progress[1].rank.id, 'unranked');
     });
-    await t.test('database failure rolls back every rating/history/result write, then retries safely', async () => {
+    await t.test('invalid abandonment is rejected before journalling; a corrected result applies once', async () => {
       const room = await reserve(), before = await store.ratingFor(players[0].accountId, 1, 'ranked');
-      // Duplicate abandonment causes a unique violation late in the transaction.
+      // Malformed server outcomes must not poison the durable replay queue.
       const duplicate = { id: players[1].id, reason: 'left_match' };
       await assert.rejects(store.finalize(room.id, outcome(room, { abandoned: [duplicate, duplicate] })));
       assert.deepEqual(await store.ratingFor(players[0].accountId, 1, 'ranked'), before);
@@ -50,6 +50,30 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
       assert.equal(result.status, 'completed');
       await assert.rejects(store.checkCooldown(players[1].accountId), error => error.code === 'cooldown');
       assert.equal((await store.pool.query('SELECT count(*)::integer AS n FROM arena.abandonments WHERE match_id=$1', [room.id])).rows[0].n, 1);
+    });
+    await t.test('durable outbox survives a failed rating transaction and preserves the first winner', async () => {
+      const room = await reserve(1, { players: players.slice(2, 4) });
+      const before = await store.ratingFor(players[2].accountId, 1, 'ranked');
+      // A real PostgreSQL constraint injects a failure after a rating UPDATE,
+      // not a mock response. The disposable CI database contains no real users.
+      await store.pool.query(`ALTER TABLE arena.rating_history ADD CONSTRAINT injected_result_failure CHECK (match_id <> '${room.id}'::uuid)`);
+      try {
+        await assert.rejects(store.finalize(room.id, outcome(room)));
+        assert.deepEqual(await store.ratingFor(players[2].accountId, 1, 'ranked'), before);
+        assert.equal((await store.pool.query('SELECT count(*)::integer AS n FROM arena.rating_history WHERE match_id=$1', [room.id])).rows[0].n, 0);
+        const pending = (await store.pool.query('SELECT outcome FROM arena.pending_results WHERE match_id=$1', [room.id])).rows[0];
+        assert.equal(pending.outcome.winner, 0);
+      } finally { await store.pool.query('ALTER TABLE arena.rating_history DROP CONSTRAINT injected_result_failure'); }
+      const result = await store.finalize(room.id, outcome(room, { winner: 1 }));
+      assert.equal(result.winner, 0, 'retry cannot replace the first durable authoritative outcome');
+      assert.equal((await store.ratingFor(players[2].accountId, 1, 'ranked')).games, before.games + 1);
+      assert.equal((await store.pool.query('SELECT count(*)::integer AS n FROM arena.pending_results WHERE match_id=$1', [room.id])).rows[0].n, 0);
+    });
+    await t.test('cancellation cannot erase an already journalled completed outcome', async () => {
+      const room = await reserve(1, { players: players.slice(2, 4) });
+      await store.queueResult(room.id, outcome(room));
+      assert.equal((await store.cancel(room.id, 'server_restart')).status, 'completed');
+      assert.equal((await store.finalize(room.id)).winner, 0);
     });
     await t.test('private rooms, test clients and guests cannot earn Ranked MMR', async () => {
       for (const extra of [{ private: true }, { players: players.slice(0, 2).map(p => ({ ...p, isTest: true })) },
@@ -81,6 +105,8 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
       const second = new Store({ ...options, serverId: randomUUID() });
       try { await assert.rejects(second.init(), /lease/); } finally { await second.close(); }
       const room = await reserve();
+      const queued = await reserve(1, { players: players.slice(4, 6) });
+      await store.queueResult(queued.id, outcome(queued));
       const app = await createGameServer(configuration({ PORT: '0', DATABASE_URL: options.connectionString, SEASON_ID: options.season }));
       try {
         const origin = `http://127.0.0.1:${app.port}`;
@@ -94,6 +120,11 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
         assert.equal((await fetch(origin + '/readyz')).status, 200);
         assert.equal((await app.store.pool.query('SELECT status FROM arena.matches WHERE id=$1', [room.id])).rows[0].status, 'cancelled');
         assert.equal((await app.store.getProfile(players[0].accountId)).progress[0].games, 2);
+        assert.equal((await app.store.getProfile(players[4].accountId)).progress[0].games, 1);
+        assert.equal(app.store.recoveredResults, 1);
+        const recovered = (await app.store.pool.query('SELECT result FROM arena.matches WHERE id=$1', [queued.id])).rows[0].result;
+        assert.equal(recovered.status, 'completed'); assert.equal(recovered.winner, 0);
+        assert.equal((await app.store.pool.query('SELECT count(*)::integer AS n FROM arena.pending_results')).rows[0].n, 0);
       } finally { await app.close(); }
     });
   } finally { if (!store.pool.ended) await store.close(); }

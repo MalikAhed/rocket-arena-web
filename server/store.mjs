@@ -1,5 +1,6 @@
 import pg from 'pg';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
+import { stageResult, recoverPendingResults } from './result-outbox.mjs';
 import { DEFAULT_RATING_CONFIG, initialRating, rateTeams, rankOf } from './rating.mjs';
 import { PublicError } from './limits.mjs';
 const convert = row => ({ mu: Number(row.mu), uncertainty: Number(row.uncertainty), games: row.games });
@@ -12,7 +13,13 @@ export class Store {
     this.season = season; this.rating = rating; this.serverId = serverId; this.onLeaseLost = onLeaseLost;
     this.healthy = false; this.leaseLost = false;
   }
-  async migrate() { await this.pool.query(await readFile(new URL('./migrations/001_online.sql', import.meta.url), 'utf8')); }
+  async migrate() {
+    const directory = new URL('./migrations/', import.meta.url);
+    for (const name of (await readdir(directory)).filter(name => /^\d+_[a-z_]+\.sql$/.test(name)).sort()) {
+      await this.pool.query(await readFile(new URL(name, directory), 'utf8'));
+    }
+  }
+  async queueResult(id, outcome) { return stageResult(this.pool, id, outcome); }
   async init({ waitForLeaseMs = 0 } = {}) {
     // Single authoritative process only. A session pooler/direct PostgreSQL
     // connection is required; a transaction-mode pooler cannot hold this lease.
@@ -35,12 +42,15 @@ export class Store {
       const stable = value => Array.isArray(value) ? value.map(stable) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, stable(value[k])])) : value;
       if (JSON.stringify(stable(rows[0].config)) !== JSON.stringify(stable(this.rating))) throw new Error('Season configuration changed: create an explicit new season');
     }
+    // Replay durable completed outcomes before invalidating interrupted games.
+    // A replay error fails startup closed; it never erases a queued outcome.
+    this.recoveredResults = await recoverPendingResults(this);
     // No leaver penalties for a process failure. Completed results are untouched.
-    await this.pool.query("UPDATE arena.matches SET status='cancelled', finished_at=now(), result=jsonb_build_object('status','cancelled','reason','server_restart','changes','[]'::jsonb) WHERE status IN ('reserved','active')");
+    await this.pool.query("UPDATE arena.matches SET status='cancelled', finished_at=now(), result=jsonb_build_object('status','cancelled','reason','server_restart','changes','[]'::jsonb) WHERE status IN ('reserved','active') AND NOT EXISTS (SELECT 1 FROM arena.pending_results p WHERE p.match_id=arena.matches.id)");
     this.healthy = true;
   }
   async ready() {
-    try { await this.pool.query('SELECT version FROM arena.schema_version WHERE version=1'); this.healthy = !!this.lease && !this.leaseLost; }
+    try { const result = await this.pool.query('SELECT version FROM arena.schema_version WHERE version=2'); this.healthy = result.rowCount === 1 && !!this.lease && !this.leaseLost; }
     catch { this.healthy = false; }
     return this.healthy;
   }
@@ -81,11 +91,26 @@ export class Store {
   }
   async activate(id) { await this.pool.query("UPDATE arena.matches SET status='active',started_at=now() WHERE id=$1 AND status='reserved'", [id]); }
   async cancel(id, reason) {
-    const result = { status: 'cancelled', reason, changes: [] };
-    const { rows } = await this.pool.query("UPDATE arena.matches SET status='cancelled',result=$2,finished_at=now() WHERE id=$1 AND status IN ('reserved','active') RETURNING result", [id, result]);
-    return rows[0]?.result ?? (await this.pool.query('SELECT result FROM arena.matches WHERE id=$1', [id])).rows[0]?.result ?? result;
+    const result = { status: 'cancelled', reason, changes: [] }, c = await this.pool.connect();
+    let pending = false, saved = result;
+    try {
+      await c.query('BEGIN');
+      const match = (await c.query('SELECT status,result FROM arena.matches WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      if (match && ['completed', 'cancelled'].includes(match.status)) saved = match.result;
+      else if (match) {
+        pending = (await c.query('SELECT 1 FROM arena.pending_results WHERE match_id=$1', [id])).rowCount > 0;
+        if (!pending) await c.query("UPDATE arena.matches SET status='cancelled',result=$2,finished_at=now() WHERE id=$1", [id, result]);
+      }
+      await c.query('COMMIT');
+    } catch (error) { await c.query('ROLLBACK').catch(() => {}); throw error; }
+    finally { c.release(); }
+    // A confirmed outcome wins a race against cancellation/restart cleanup.
+    return pending ? this.finalize(id) : saved;
   }
   async finalize(id, outcome) {
+    const staged = await this.queueResult(id, outcome);
+    if (staged.result) return staged.result;
+    outcome = staged.outcome; // First durable server outcome wins every retry.
     const c = await this.pool.connect();
     try {
       await c.query('BEGIN');
@@ -128,6 +153,7 @@ export class Store {
       const result = { ...outcome, status: 'completed', matchId: id, mode: match.mode, playlist: match.playlist, season: match.season_id,
         ratingVersion: match.config_version, changes: match.mode === 'ranked' ? changes : [] };
       await c.query("UPDATE arena.matches SET status='completed',result=$2,finished_at=now() WHERE id=$1", [id, result]);
+      await c.query('DELETE FROM arena.pending_results WHERE match_id=$1', [id]);
       await c.query('COMMIT');
       return result;
     } catch (error) { await c.query('ROLLBACK'); throw error; } finally { c.release(); }
