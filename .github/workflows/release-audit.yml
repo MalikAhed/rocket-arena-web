@@ -1,0 +1,32 @@
+name: Release endpoint audit
+on:
+  push:
+    branches: [online-play]
+    paths: [tools/release-probe.mjs, .github/workflows/release-audit.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Inspect public release endpoints without modifying services
+        run: node tools/release-probe.mjs
+      - name: Package locked dependencies for reproducing tests offline
+        run: tar -czf /tmp/arena-test-dependencies.tgz node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-audit-${{ github.run_id }}
+          path: |
+            evidence/release-probe.json
+            /tmp/arena-test-dependencies.tgz
+          retention-days: 3
