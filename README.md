@@ -1,46 +1,63 @@
-# Rocket Arena — compact web edition
+# Rocket Arena — online-play beta
 
-## [▶ Play Rocket Arena in your browser](https://malikahed.github.io/rocket-arena-web/)
+The existing game now has server-authoritative Casual multiplayer, account-based Ranked integration, and separate offline Bots and Free Play. This is the `online-play` branch, not a replacement project. **The existing GitHub Pages site remains the default-branch edition, not a deployed online preview.** Do not merge or replace it without Malik's approval.
 
-Drive, boost, jump and play arena soccer against the included AI opponents. Keyboard, controller and mobile touch controls are supported.
+The integrated code and rendered artwork are committed in `33a1f93952ede7714347d114da022addda4ae7d4`. A previous CI push failed while changing a workflow; that handoff failure was recovered without a force-push. CI is read-only again. You do not need to apply an integration patch or retrieve source from an artifact.
 
-An independent copy of the game, optimized for static HTTPS hosting. The original project is unchanged apart from an added offline asset-conversion script.
+## Start locally — guest Casual
 
-## Run and build
+Requires Node 22+ and npm. From a fresh clone:
 
-Requires Node 22 or newer. Run `npm start` for local play (no installed packages needed). The default URL is http://localhost:4173; use `PORT=4287 npm start` to choose another port. Source edits automatically reload the local page.
+```sh
+git clone https://github.com/MalikAhed/rocket-arena-web.git
+cd rocket-arena-web
+git switch online-play
+npm ci
+cp .env.example .env
+npm run server
+```
 
-Run `npm ci` followed by `npm run build` to generate `dist/`. There are no runtime npm dependencies; esbuild is the only development dependency. Upload **the contents of `dist/`**, not this whole directory, to the root of an HTTPS static host. For a subpath deployment, set `ROCKET_ARENA_BASE_PATH` during the build, as the included GitHub Pages workflow does.
+In another terminal in the same directory:
 
-The included `_headers` config supports hosts that recognize that format and enables cross-origin isolation for threaded runtimes. The game also runs on GitHub Pages without those custom headers, using its single-thread inference fallback. Serve `.wasm` as `application/wasm`, `.js` as JavaScript, and `.mp3` as `audio/mpeg`. Enable host-side Brotli/gzip for JS, CSS, WASM and ONNX. The stadium `.json.gz` is an opaque gzip file decoded by the game: do not set `Content-Encoding` on that file. This version targets modern browsers with WebGL2 and DecompressionStream support.
+```sh
+PORT=4173 npm start
+```
 
-Local production check: `ROCKET_ARENA_DIST=1 PORT=4288 npm start` after building. `npm run verify` checks assets, physics hashes, geometry and removed-car fallback. `npm test` runs all three bots through the shipped inference engine.
+Open `http://127.0.0.1:4173/` in independent browser profiles. Select Play → Casual and the same playlist. You need 2, 4 or 6 ready participants for 1v1, 2v2 or 3v3. Guests need only a display name; there is no automatic bot filling. The backend defaults to port 8080, hence the explicit frontend port override. Stop the server and Bots/Free Play still work.
 
-## Changes
+Without `.env`, use `PORT=8080 npm run server` and, separately, `ONLINE_SERVER_URL=http://127.0.0.1:8080 PORT=4173 ROCKET_ARENA_LIVE_RELOAD=0 npm start`. An unconfigured frontend reports that online services are unavailable rather than pretending to search.
 
-- Tripo, Vanguard (including Original), Crimson and Volt are removed from the garage and shipping assets. Old saved selections fall back to Fennec. Spectre now uses Fennec as its wheel donor.
-- Remaining garage cars: Fennec, Octane Original, Challenger, Spectre, Vesper and Amethyst. Unselectable model variants, reference files, viewers, native sources and review output are excluded from the production build.
-- Large artwork and embedded model textures use WebP. Color textures are capped at 1024px; wide environment artwork at 2048px. The shader lighting lookup PNG remains lossless.
-- GLB geometry uses Meshopt compression. Car triangle counts, names and custom shading attributes are preserved. Decorative garden/stone meshes are simplified, with regenerated lower-detail indices and retained instancing.
-- Reflection cube resolution is 128px instead of 256px, using the existing mip chain. The stadium geometry is stored as gzip without changing any values. Collision meshes and physics WASM remain byte-for-byte unchanged.
-- Vehicle and impact effects use MP3. Engine grains and boost loops retain WAV to preserve their timing. Balanced rendering starts at 85% scale with a 60 FPS cap; quality remains configurable.
-- Bot models and the inference engine load when starting a bot match. They are retained because removing them would remove the existing opponent modes.
-- Garage thumbnails render at 256×144 and the selected car at 854×480. Switching cars redraws the selected preview; previews initialize sequentially, without an extra shader-compilation pass.
-- Mobile play uses an original “Field Console” interface with a squared Drive/Steer pad and geometric Lift, Thrust, Drift and View controls. It keeps the same gameplay bindings while using its own layout, HUD treatment, safe-area rules and touch language.
+## Durable storage and accounts
 
-The game retains solo practice and local AI matches. Hosting this edition makes it playable through a website; network multiplayer has not been added.
+`docker compose up --build` provides a local PostgreSQL database, game server and built frontend. The named database volume persists across ordinary `docker compose down`; `down -v` deliberately destroys it. The development password in Compose is not a production credential. The Docker images and startup smoke tests passed; the complete Compose deployment still needs its own acceptance run.
 
-## Measured size
+Ranked requires a durable PostgreSQL connection and a real configured Supabase/GitHub OAuth provider. Configure `DATABASE_URL`, `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, run `npm run db:migrate`, then restart the server and rebuild/restart the frontend. Never expose database credentials, OAuth secrets or Supabase secret/service-role keys in public config. The available account flow uses GitHub-managed registration/sign-in/recovery, not app-owned passwords or a development SMTP sender.
 
-| Files | Original | Compact |
-| --- | ---: | ---: |
-| Public assets | 115.10 MiB | 38.62 MiB |
-| Garden/stone scenery, including LOD data | 7.40 MiB | 1.01 MiB |
-| Audio | 12.33 MiB | 3.68 MiB |
-| Garage backgrounds | 4.37 MiB | 0.23 MiB |
+See [deployment and recovery](docs/online-play/DEPLOYMENT.md) for precise provider setup, callbacks, TLS, free limits, backups and rollback. Project creation and live OAuth/provider deployment are still external setup steps; no live multiplayer URL is claimed.
 
-The full static deployment is approximately 41 MiB before transport compression. AI models and their runtime account for about half the retained asset size. Do not upload `node_modules`, source files, tests, screenshots or reports.
+## Verification
 
-`asset-report.json` records individual conversions. The asset-conversion tool lives at `../tools/build-web-assets.mjs` in the original project and requires its existing optimization dependencies plus ffmpeg. It is an offline maintenance tool; this edition runs and builds independently of that original project.
+```sh
+npm run verify
+npm test
+npm run test:online
+# Set ONLINE_TEST_DATABASE_URL to a DISPOSABLE PostgreSQL database for DB tests.
+npx playwright install --with-deps chromium
+npm run test:browser
+npm run build
+# Serve a root build locally:
+ROCKET_ARENA_DIST=1 PORT=4173 npm start
+```
 
-Existing attribution and license files are retained in `public/licenses/`, model credits and bot directories. See `SOURCE.md` for provenance. Browser checks use software rendering, so they establish functionality, not hardware FPS or phone performance.
+The browser suite uses real independent browser contexts and WebSockets, but synthetic players and internal goal fixtures. It is not proof of human Internet play. [Verification evidence and remaining gaps](docs/online-play/VERIFICATION.md) distinguishes passing tests from unverified features. No Chromebook benchmark or production concurrency guarantee is claimed.
+
+## Code and design
+
+- `server/`: authoritative native simulation, queues, lifecycle, provider verification, PostgreSQL transactions and ratings.
+- `src/online/`: shared protocol, browser transport, approximate prediction/reconciliation, authentication and UI.
+- `server/migrations/001_online.sql`: private game schema and idempotent migration; no production fixture users.
+- `public/assets/online/`: five rendered cards and editable original rank badges. `tools/render-online-art.mjs`, `tools/online-art-scene.js` and `tools/render-online-scenes.mjs` preserve editable sources.
+
+Read [architecture and failure policies](docs/online-play/ARCHITECTURE.md), [the rating model](docs/online-play/RANKING.md), and [artwork provenance](docs/online-play/ARTWORK.md). Ratings are **Arena Team Elo v1, not Rocket League's exact MMR**. The supplied native API lacks full rollback state; prediction is approximate and needs high-latency competitive playtesting.
+
+Existing car models, arena geometry, native physics constants, camera implementation, lighting, shaders and graphics presets—including Potato—are preserved. Narrow adapters add online roster/state handling. Original optimization notes are retained in [the compact-edition baseline](docs/compact-baseline.md). Existing component notices remain in `SOURCE.md`, `public/licenses/` and `public/assets/sketchfab/CREDITS.md`; this contribution grants no new blanket rights over inherited assets.

@@ -6,12 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 defaults:
   run:
     shell: bash
-
-permissions:
-  contents: read
 
 concurrency:
   group: online-play-${{ github.ref }}
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -44,32 +44,44 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Prepare evidence directory
+      - name: Prepare evidence
         run: mkdir -p evidence
-      - name: Verify protected assets
-        run: npm run verify | tee evidence/verify.log
-      - name: Existing bot regression tests
-        run: npm test | tee evidence/bots.log
-      - name: Online transport, rules, security and real PostgreSQL tests
+      - name: Verify protected assets and existing bots
+        run: |
+          npm run verify | tee evidence/verify.log
+          npm test | tee evidence/bots.log
+      - name: Multiplayer, failure, security and real PostgreSQL tests
         run: npm run test:online | tee evidence/online-tests.log
-      - name: Build without deploying
+      - name: Build Pages-subpath frontend without deploying
         run: npm run build | tee evidence/build.log
         env:
           ROCKET_ARENA_BASE_PATH: /rocket-arena-web
-      - name: Install test browser
+      - name: Install browser
         run: npx playwright install --with-deps chromium
-      - name: Browser regression and online end-to-end evidence
+      - name: Independent 1v1, 2v2, 3v3 browsers and offline regression
+        run: npm run test:browser | tee evidence/browser.log
+      - name: Container build and startup checks
         run: |
-          if [ -f tests/online/browser.mjs ]; then
-            node tests/online/browser.mjs
-          else
-            node tools/browser-baseline.mjs
-          fi
+          docker compose config --quiet
+          docker build --target server -t rocket-online-server . > evidence/docker-server.log 2>&1
+          docker build --target frontend -t rocket-online-frontend . > evidence/docker-frontend.log 2>&1
+          docker run -d --name online-server-check -p 18080:8080 -e NODE_ENV=development rocket-online-server
+          docker run -d --name online-frontend-check -p 18081:4173 rocket-online-frontend
+          trap 'docker rm -f online-server-check online-frontend-check' EXIT
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:18080/readyz > evidence/docker-ready.json && break || sleep 1; done
+          curl -fsS http://127.0.0.1:18080/readyz
+          curl -fsS http://127.0.0.1:18081/ > /dev/null
+          curl -fsS http://127.0.0.1:18081/assets/online/config.json > evidence/docker-frontend-config.json
       - name: Production dependency audit
         run: npm audit --omit=dev --json > evidence/dependency-audit.json
-      - name: Package exact tested workspace
+      - name: Package tracked source and verification evidence
         if: always()
-        run: tar --exclude=.git --exclude=node_modules --exclude=dist -czf "$RUNNER_TEMP/online-workspace.tgz" .
+        run: |
+          mkdir -p "$RUNNER_TEMP/online-export"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/online-export"
+          if [ -d evidence ]; then cp -R evidence "$RUNNER_TEMP/online-export/evidence"; fi
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/online-export/evidence-commit.txt"
+          tar -czf "$RUNNER_TEMP/online-workspace.tgz" -C "$RUNNER_TEMP/online-export" .
       - uses: actions/upload-artifact@v4
         if: always()
         with:
