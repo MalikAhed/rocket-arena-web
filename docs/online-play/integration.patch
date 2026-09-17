@@ -1,0 +1,306 @@
+diff --git a/index.html b/index.html
+index fbbcf30..847642a 100644
+--- a/index.html
++++ b/index.html
+@@ -17,6 +17,7 @@
+     <link rel="stylesheet" href="/src/styles.css" />
+     <link rel="stylesheet" href="/src/styles/arcade-hud.css" />
+     <link rel="stylesheet" href="/src/styles/home.css" />
++    <link rel="stylesheet" href="/src/styles/online.css" />
+     <link rel="stylesheet" href="/src/styles/goal-presentation.css" />
+     <link rel="stylesheet" href="/src/styles/pause-menu.css" />
+     <link rel="stylesheet" href="/src/styles/ui-system.css" />
+diff --git a/src/app/startup.js b/src/app/startup.js
+index 43d6f65..305e47a 100644
+--- a/src/app/startup.js
++++ b/src/app/startup.js
+@@ -1,3 +1,4 @@
++import { mountOnline } from '../online/interface.js';
+ import { setCarMaterialQuality } from "../materials/car.js";
+ import {FennecV2Post} from '../rendering/fennec-v2-post.js';
+ import { ReferencePost } from '../rendering/reference-post.js';
+@@ -309,7 +310,7 @@ async function startGame() {
+     J = new Set();
+   let motionEffects = null;
+   const speedLines = new SpeedLines();
+-  let home = null, pauseMenu = null, goalPresentation = null, pendingGoal = null, replayBuffer = null, arenaEffects = null;
++  let online = null, home = null, pauseMenu = null, goalPresentation = null, pendingGoal = null, replayBuffer = null, arenaEffects = null;
+   let replayClock = 0, lastReplayRecord = -1, previewDirty = true;
+   let previewRestore = null, returnHomeAfter = null, returnPauseAfter = false, goalSkipDown = false;
+   let ne = !1,
+@@ -348,7 +349,7 @@ async function startGame() {
+       le = !1;
+       const W = !ne && (J.size === 0 ||
+         (J.size === 1 && J.has("goal") && goalPresentation?.active && !goalPresentation.replaying));
+-      ((a.state.paused = a.state.mode === "match" && (!W || p)),
++      ((a.state.paused = !online?.active && a.state.mode === "match" && (!W || p)),
+         (x.enabled = W),
+         (R.enabled = W),
+         (D.enabled = W),
+@@ -401,6 +402,7 @@ async function startGame() {
+         gt == null || gt.setFpsLimit(W.limitFps ? W.maxFps : null));
+     }),
+     ft = () => {
++      if (online?.visible) { online.escape(); return; }
+       if (home?.visible) return;
+       if (pauseMenu?.isOpen) { pauseMenu.hide(); st(); return; }
+       if (goalPresentation?.active) { goalPresentation.finish(); return; }
+@@ -498,6 +500,7 @@ async function startGame() {
+       ne = !1;
+     },
+     onStart: async (W) => {
++      online?.leave();
+       returnHomeAfter = null;
+       goalPresentation?.finish({ cancel: true });
+       (await Promise.all([o.load(), N.ensureOpponent(JA(o.id).carVisual)]),
+@@ -511,6 +514,7 @@ async function startGame() {
+           pe.update(a.state)));
+     },
+     onLeave: () => {
++      if (online?.active) { online.leave(); return; }
+       returnHomeAfter = null;
+       goalPresentation?.finish({ cancel: true });
+       (v(),
+@@ -528,7 +532,7 @@ async function startGame() {
+       (W) => {
+         W.code !== "KeyM" ||
+           J.has("physics-lab") ||
+-          home?.visible || goalPresentation?.active ||
++          home?.visible || online?.active || online?.visible || goalPresentation?.active ||
+           W.repeat ||
+           W.ctrlKey ||
+           W.metaKey ||
+@@ -689,7 +693,7 @@ async function startGame() {
+             : nn.pressed) ?? !1,
+         Ft = W ? JSON.stringify([W.id, W.index]) : null;
+       (Ft !== Me && (ve = fe), (Me = Ft));
+-      const Nt = fe && !ve && !Xe.isOpen && !(de != null && de.isOpen) && !J.has("physics-lab");
++      const Nt = !online?.active && !online?.visible && fe && !ve && !Xe.isOpen && !(de != null && de.isOpen) && !J.has("physics-lab");
+       (Nt && (pe.isOpen ? pe.hide() : pe.show()),
+         (ve = fe),
+         Nt && (R.capturing = !0));
+@@ -801,12 +805,12 @@ async function startGame() {
+   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+   nd.remove();
+   function wt(W) {
+-    if (home?.visible) {
++    if (home?.visible && !online?.active) {
+       ze = W; s.sync(W);
+       if (home.consumeDirty() || previewDirty) { renderHomePreview(); previewDirty = false; return; }
+       return false;
+     }
+-    if (pauseMenu?.isOpen) {
++    if (pauseMenu?.isOpen && !online?.active) {
+       ze = W; s.sync(W);
+       if (previewDirty) { renderGame(N.scene,H.camera); previewDirty = false; return; }
+       return false;
+@@ -830,9 +834,9 @@ async function startGame() {
+     n.setGoalExplosionEnabled(a.state.mode === "match" || !V.disableGoalReset);
+     ((ze = W),
+       (a.state.paused =
+-        a.state.mode === "match" &&
++        !online?.active && a.state.mode === "match" &&
+         (ne || J.size > 0 || document.hidden || !document.hasFocus() || p)),
+-      a.state.paused || (a.state.mode === "match" && a.state.phase === "ended") || (a.state.mode === "freeplay" && J.size > 0)
++      online?.active ? (he(), online.update(W, ke, s)) : a.state.paused || (a.state.mode === "match" && a.state.phase === "ended") || (a.state.mode === "freeplay" && J.size > 0)
+         ? (he(), s.sync(W))
+         : s.update(W, he, a.state.mode === "match" ? me : void 0),
+       a.state.mode === "freeplay" &&
+@@ -1120,6 +1124,8 @@ async function startGame() {
+       }
+       qe("home", open);
+     },
++    casual: () => { pe.options.onLeave(); void online.open("casual"); },
++    ranked: () => { pe.options.onLeave(); void online.open("ranked"); },
+     match: () => { returnHomeAfter = "match"; ne = true; pe.show(); },
+     freeplay: () => { pe.options.onLeave(); st(); },
+     garage: () => { returnHomeAfter = "car"; ne = true; de.show(); },
+@@ -1134,7 +1140,30 @@ async function startGame() {
+   an.querySelector("#settings-button").addEventListener("click",event=>{
+     event.preventDefault();event.stopImmediatePropagation();pauseMenu.show();
+   },true);
++  online = mountOnline(an, {
++    sim: n, match: a, visual: () => i,
++    modal: open => { ne = open; qe("online", open); },
++    resume: () => st(), home: () => home.show(), closeHome: () => home.close(),
++    bots: () => { ne = true; pe.show(); },
++    prepare: async (roster, order, valid) => {
++      goalPresentation?.finish({ cancel: true }); v(); p = false;
++      const ordered = order.map(index => roster[index]);
++      await N.prepareOnlineRoster(ordered);
++      if (!valid()) { while (N.cars.length > 1) N.removeOpponent(); return; }
++      n.configureOnline(ordered); syncNativeGeometry(); a.start(); a.state.phase = "waiting";
++      n.setGoalExplosionEnabled(false); s.sync(); n.resetView();
++    },
++    restore: () => {
++      while (N.cars.length > 1) N.removeOpponent();
++      N.cars[0].userData.garageTeam = e; N.applyGarageCustomization(i);
++      pe.options.onLeave();
++    },
++  });
++  if (new URLSearchParams(location.search).get("physicsDebug") === "1") {
++    Object.defineProperty(window, "rocketArenaOnline", { value: Object.freeze({ snapshot: () => online.diagnostics() }) });
++  }
+   home.show();
++  void online.restoreIntent();
+   ((gt = new FrameScheduler(te.getContext(), wt, (W) => He.displayFrame(W))),
+     gt.setFpsLimit(We.limitFps ? We.maxFps : null),
+     xe(),
+diff --git a/src/physics/simulation.js b/src/physics/simulation.js
+index 7f25cd8..18ce1f0 100644
+--- a/src/physics/simulation.js
++++ b/src/physics/simulation.js
+@@ -1,4 +1,4 @@
+-import { PHYSICS_PRESETS, resolvePhysicsSelection } from "./presets.js";
++import { PHYSICS_PRESETS, resolvePhysicsSelection, resolveVisualHitboxFamily } from "./presets.js";
+ import { initializeGameplayPhysics } from "./source-runtime.js";
+ import { addConfiguredCar, readNativeCarConfig } from "./car-config.js";
+ import { _ } from "../core/class-fields.js";
+@@ -82,6 +82,16 @@ class PhysicsSimulation {
+       throw new Error("Opponent creation failed");
+     (this.resetKickoff(), this.resetView());
+   }
++  configureOnline(roster) {
++    if (this.physicsSelection.engine !== "experimental") throw new Error("Online requires the default source physics. Remove physics=original from the URL and reload.");
++    if (this.module._physics_createArena() !== 1) throw new Error("Arena creation failed");
++    this.carConfigs = [];
++    roster.forEach((player, index) => {
++      if (addConfiguredCar(this.module, player.team, PHYSICS_PRESETS[resolveVisualHitboxFamily(player.visual)]) !== index) throw new Error("Online car creation failed");
++      this.carConfigs.push(readNativeCarConfig(this.module, index));
++    });
++    this.setUnlimitedBoost(false); this.resetKickoff(); this.resetView();
++  }
+   async switchPhysics(selection, kind, match, team, unlimited, canCommit = () => true) {
+     const candidate = new PhysicsSimulation(selection);
+     await candidate.init();
+diff --git a/src/rendering/world.js b/src/rendering/world.js
+index 6b38a90..1d4677c 100644
+--- a/src/rendering/world.js
++++ b/src/rendering/world.js
+@@ -239,6 +239,18 @@ class GameWorld {
+         this.scene.add(this.opponentSun, this.opponentSunTarget),
+         this.addCar(getTeamAssignment(false).botTeam, visual)));
+   }
++  async prepareOnlineRoster(roster) {
++    while (this.cars.length > 1) this.removeOpponent();
++    this.cars[0].userData.garageTeam = roster[0].team;
++    this.applyGarageCustomization(this.carVisual);
++    for (const player of roster.slice(1)) {
++      const asset = this.opponentCarAssets.get(player.visual) ?? await sketchfabModels.loadCar(player.visual);
++      this.opponentCarAssets.set(player.visual, asset);
++      this.addCar(player.team, player.visual, asset);
++    }
++    await Promise.all(this.carBoosts.flatMap(boosts => boosts.map(boost => boost.preload())));
++    this.markRenderTreeChanged();
++  }
+   async prepareAssets() {
+     (await this.ensureOpponent(),
+       (this.cars[no].visible = !1),
+@@ -246,12 +258,12 @@ class GameWorld {
+         this.carBoosts.flatMap((e) => e.map((t) => t.preload())),
+       ));
+   }
+-  addCar(e, t = this.carVisual) {
++  addCar(e, t = this.carVisual, assetOverride = null) {
+     const n = new dt(),
+       r = this.cars.length === no,
+       s = t === "realistic",
+       a = t === "flat-car",
+-      custom = isSketchfabCar(t) ? (r ? this.opponentCarAsset : this.sketchfabCarAsset) : null;
++      custom = assetOverride ?? (isSketchfabCar(t) ? (r ? this.opponentCarAsset : this.sketchfabCarAsset) : null);
+     let o = null,
+       A;
+     if (s) {
+diff --git a/src/ui/home-screen.js b/src/ui/home-screen.js
+index 329c551..5382351 100644
+--- a/src/ui/home-screen.js
++++ b/src/ui/home-screen.js
+@@ -14,8 +14,10 @@ export function mountHome(root, actions) {
+     <section class="arena-play" data-home-page="play" hidden aria-label="Choose a game mode">
+       <h1 class="arena-play__title">PLAY</h1>
+       <div class="arena-play__grid">
+-        <button class="arena-mode" type="button" data-home="match"><img src="/assets/menu/casual-original.webp" alt="" draggable="false"><span><strong>CASUAL</strong><small>1v1 vs AI · Choose your opponent</small></span></button>
+-        <button class="arena-mode" type="button" data-home="freeplay"><img src="/assets/menu/freeplay-original.webp" alt="" draggable="false"><span><strong>FREE PLAY</strong><small>Solo practice · No timer, no opponent</small></span></button>
++        <button class="arena-mode" type="button" data-home="casual"><img src="/assets/menu/casual-original.webp" alt="" draggable="false"><span><strong>CASUAL</strong><small>Online · 1v1, 2v2, 3v3</small></span></button>
++        <button class="arena-mode" type="button" data-home="ranked"><img src="/assets/online/illustrations.svg#ranked" alt="" draggable="false"><span><strong>RANKED</strong><small>Online · Account required</small></span></button>
++        <button class="arena-mode" type="button" data-home="match"><img src="/assets/online/illustrations.svg#bots" alt="" draggable="false"><span><strong>BOTS</strong><small>Offline · Three AI difficulties</small></span></button>
++        <button class="arena-mode" type="button" data-home="freeplay"><img src="/assets/menu/freeplay-original.webp" alt="" draggable="false"><span><strong>FREE PLAY</strong><small>Offline · Solo practice</small></span></button>
+       </div>
+       <nav class="arena-play__actions" aria-label="Play menu actions"><button type="button" data-home="back">BACK</button></nav>
+     </section>
+diff --git a/src/ui/match-menu.js b/src/ui/match-menu.js
+index c7f59b8..e0d2dcc 100644
+--- a/src/ui/match-menu.js
++++ b/src/ui/match-menu.js
+@@ -143,7 +143,7 @@ class MatchMenu {
+                  aria-labelledby="match-title" tabindex="-1">
+           <header class="match-panel__head">
+             <div>
+-              <h2 id="match-title">Casual 1v1</h2>
++              <h2 id="match-title">Bots · Offline 1v1</h2>
+               <p>Play solo against AI. Choose an opponent, then hit the field.</p>
+             </div>
+             <button class="match-panel__close" type="button" data-match="close" aria-label="Close play menu">
+diff --git a/tools/build.mjs b/tools/build.mjs
+index 7d3fe0b..78a71e6 100644
+--- a/tools/build.mjs
++++ b/tools/build.mjs
+@@ -1,3 +1,4 @@
++import { onlineConfiguration } from './online-config.mjs';
+ import { build } from 'esbuild';
+ import { cp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+ import { resolve, join, extname } from 'node:path';
+@@ -6,13 +7,15 @@ const dist = resolve(root, 'dist');
+ await rm(dist, { recursive: true, force: true });
+ await mkdir(dist, { recursive: true });
+ await cp(resolve(root, 'public'), dist, { recursive: true });
++await mkdir(resolve(dist, 'assets/online'), { recursive: true });
++await writeFile(resolve(dist, 'assets/online/config.json'), JSON.stringify(onlineConfiguration()));
+ await cp(resolve(root, 'SOURCE.md'), resolve(dist, 'SOURCE.md'));
+ let html = await readFile(resolve(root, 'index.html'), 'utf8');
+ const css = [...html.matchAll(/href="(\/src\/[^" ]+\.css)"/g)].map(m => m[1]);
+ await build({
+-  absWorkingDir: root, entryPoints: { 'app/game': 'src/game.js', 'src/materials/reference-field-worker': 'src/materials/reference-field-worker.js' },
++  absWorkingDir: root, entryPoints: { 'assets/online/auth-sdk': 'src/online/auth-sdk.js', 'app/game': 'src/game.js', 'src/materials/reference-field-worker': 'src/materials/reference-field-worker.js' },
+   outdir: dist, bundle: true, minify: true, splitting: true, format: 'esm', target: ['es2022'],
+-  external: ['/physics/*'], legalComments: 'linked', chunkNames: 'app/chunks/[name]-[hash]',
++  external: ['/physics/*', '/assets/online/auth-sdk.js'], legalComments: 'linked', chunkNames: 'app/chunks/[name]-[hash]',
+   plugins: [{ name: 'browser-only-physics', setup(b) {
+     b.onResolve({ filter: /__vite-browser-external/ }, () => ({ path: resolve(root, 'public/assets/__vite-browser-external-BIHI7g3E.js') }));
+   } }],
+diff --git a/tools/serve.mjs b/tools/serve.mjs
+index 8f9d4f5..0691989 100644
+--- a/tools/serve.mjs
++++ b/tools/serve.mjs
+@@ -1,3 +1,4 @@
++import { onlineConfiguration } from './online-config.mjs';
+ import { createReadStream, watch } from "node:fs";
+ import { stat, readFile } from "node:fs/promises";
+ import { createServer } from "node:http";
+@@ -33,6 +34,7 @@ const contentTypes = {
+   ".js": "application/javascript; charset=utf-8",
+   ".json": "application/json; charset=utf-8",
+   ".onnx": "application/octet-stream",
++  ".svg": "image/svg+xml",
+   ".png": "image/png",
+   ".jpg": "image/jpeg",
+   ".jpeg": "image/jpeg",
+@@ -92,6 +94,18 @@ const server = createServer(async (request, response) => {
+     response.end("new EventSource('/__live/events').onmessage=()=>location.reload();");
+     return;
+   }
++  if (!production && pathname === '/assets/online/config.json') {
++    response.writeHead(200, { 'Content-Type': 'application/json' });
++    response.end(JSON.stringify(onlineConfiguration())); return;
++  }
++  if (!production && pathname === '/assets/online/auth-sdk.js') {
++    try {
++      const { build } = await import('esbuild');
++      const result = await build({ entryPoints: [join(projectRoot, 'src/online/auth-sdk.js')], bundle: true, write: false, format: 'esm', platform: 'browser', minify: true });
++      response.writeHead(200, { 'Content-Type': 'application/javascript' }); response.end(result.outputFiles[0].text);
++    } catch { response.writeHead(503); response.end('throw Error("Install online dependencies with npm ci first")'); }
++    return;
++  }
+   const filePath = requestedFile(pathname);
+   if (!filePath) {
+     response.writeHead(403);

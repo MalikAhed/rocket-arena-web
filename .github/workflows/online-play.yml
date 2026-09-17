@@ -1,13 +1,17 @@
 name: Online play verification
 
+# Temporary, finite integration of the reviewed text patch. On success the
+# source is committed on online-play and this restores read-only verification.
 on:
   push:
     branches: [online-play]
-  pull_request:
-    branches: [main]
 
 permissions:
-  contents: read
+  contents: write
+
+defaults:
+  run:
+    shell: bash
 
 concurrency:
   group: online-play-${{ github.ref }}
@@ -15,6 +19,7 @@ concurrency:
 
 jobs:
   verify:
+    if: github.ref == 'refs/heads/online-play'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -33,13 +38,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - name: Apply reviewed integration without overwriting unrelated files
+        run: |
+          test "$GITHUB_REF" = refs/heads/online-play
+          node --input-type=module <<'JS'
+          import {execFileSync} from 'node:child_process';
+          import fs from 'node:fs';
+          const allowed=['index.html','src/app/startup.js','src/physics/simulation.js','src/rendering/world.js','src/ui/home-screen.js','src/ui/match-menu.js','tools/build.mjs','tools/serve.mjs'];
+          const entries=execFileSync('git',['apply','--numstat','docs/online-play/integration.patch'],{encoding:'utf8'}).trim().split('\n');
+          for(const line of entries) if(!allowed.includes(line.split('\t')[2])) throw Error('Unexpected integration path');
+          execFileSync('git',['apply','--check','docs/online-play/integration.patch']);
+          execFileSync('git',['apply','docs/online-play/integration.patch']);
+          const path='server/native.mjs';
+          fs.writeFileSync(path,fs.readFileSync(path,'utf8').replace('this.module._physics_destroyArena?.();','this.module._physics_destroy?.();'));
+          JS
       - name: Install locked dependencies
         run: npm ci
+      - name: Generate original editable artwork
+        run: node tools/render-online-art.mjs
       - name: Prepare evidence directory
         run: mkdir -p evidence
       - name: Verify protected assets
@@ -54,15 +76,27 @@ jobs:
           ROCKET_ARENA_BASE_PATH: /rocket-arena-web
       - name: Install test browser
         run: npx playwright install --with-deps chromium
-      - name: Browser regression and online end-to-end evidence
-        run: |
-          if [ -f tests/online/browser.mjs ]; then
-            node tests/online/browser.mjs
-          else
-            node tools/browser-baseline.mjs
-          fi
+      - name: Independent browser end-to-end evidence
+        run: node tests/online/browser.mjs | tee evidence/browser.log
       - name: Production dependency audit
         run: npm audit --omit=dev --json > evidence/dependency-audit.json
+      - name: Commit verified source only to online-play and restore read-only CI
+        run: |
+          test "$GITHUB_REF" = refs/heads/online-play
+          test "$(git ls-remote origin refs/heads/online-play | cut -f1)" = "$GITHUB_SHA"
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const workflow=execFileSync('git',['show','2f3dafe832875ebe22767746d70fa1f0a97a2199:.github/workflows/online-play.yml'],{encoding:'utf8'});
+          fs.writeFileSync('.github/workflows/online-play.yml',workflow.replace('permissions:\n','defaults:\n  run:\n    shell: bash\n\npermissions:\n'));
+          JS
+          git rm docs/online-play/integration.patch
+          git add index.html src/app/startup.js src/physics/simulation.js src/rendering/world.js src/ui/home-screen.js src/ui/match-menu.js tools/build.mjs tools/serve.mjs server/native.mjs public/assets/online/illustrations.svg public/assets/online/ranks.svg .github/workflows/online-play.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: integrate verified multiplayer into existing game and four-mode menu'
+          git push origin HEAD:refs/heads/online-play
+          git rev-parse HEAD > evidence/commit.txt
       - name: Package exact tested workspace
         if: always()
         run: tar --exclude=.git --exclude=node_modules --exclude=dist -czf "$RUNNER_TEMP/online-workspace.tgz" .

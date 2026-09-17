@@ -1,0 +1,124 @@
+import { chromium } from 'playwright';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import assert from 'node:assert/strict';
+import os from 'node:os';
+import { createGameServer } from '../../server/index.mjs';
+import { configuration } from '../../server/config.mjs';
+
+const out = 'evidence/online-browser'; await mkdir(out, { recursive: true });
+const app = await createGameServer(configuration({ PORT: '0', MAX_ROOMS: '1' }));
+const host = `http://127.0.0.1:${app.port}`;
+const staticServer = spawn(process.execPath, ['tools/serve.mjs'], { env: { ...process.env, PORT: '4173', ONLINE_SERVER_URL: host, ROCKET_ARENA_LIVE_RELOAD: '0' }, stdio: 'inherit' });
+const delay = ms => new Promise(r => setTimeout(r, ms));
+async function until(fn, timeout = 20000) { const start = performance.now(); while (!(await fn())) { if (performance.now() - start > timeout) throw Error('Browser condition timed out'); await delay(50); } }
+let browser, appClosed = false;
+const pages = [], errors = [], checks = [], measurements = [];
+try {
+  await until(async () => { try { return (await fetch('http://127.0.0.1:4173')).ok; } catch { return false; } });
+  browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling'] });
+  async function newPlayer(name) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const page = await context.newPage(); pages.push(page);
+    page.on('pageerror', error => errors.push(String(error)));
+    await page.goto('http://127.0.0.1:4173/?physicsDebug=1', { waitUntil: 'domcontentloaded' });
+    await page.locator('.arena-home:not([hidden])').waitFor({ timeout: 90000 });
+    return { context, page, name };
+  }
+  const primary = await newPlayer('Browser Player 1');
+  await primary.page.locator('[data-home="play"]').click();
+  await primary.page.screenshot({ path: `${out}/mode-menu.png` });
+  await primary.page.locator('[data-home="ranked"]').click();
+  await primary.page.locator('.online-status').filter({ hasText: /Sign in/ }).waitFor();
+  assert(await primary.page.locator('[data-online="search"]').isHidden());
+  await primary.page.screenshot({ path: `${out}/account-required.png` });
+  checks.push('Guest Ranked gate visible; no client-side access bypass used');
+  await primary.page.locator('[data-online="back"]').click();
+  const players = [primary];
+  for (const size of [1, 2, 3]) {
+    while (players.length < size * 2) players.push(await newPlayer(`Browser Player ${players.length + 1}`));
+    const current = players.slice(0, size * 2);
+    for (const player of current) {
+      const { page } = player;
+      await page.locator('[data-home="play"]').click(); await page.locator('[data-home="casual"]').click();
+      await page.locator('.online-status').filter({ hasText: /Choose a playlist/ }).waitFor();
+      await page.locator(`[data-size="${size}"]`).click(); await page.locator('[name="displayName"]').fill(player.name);
+      if (size === 1 && player === primary) await page.screenshot({ path: `${out}/playlist-cards.png` });
+      await page.locator('[data-online="search"]').click();
+      if (player === primary) {
+        await page.locator('.online-status').filter({ hasText: /Searching for/ }).waitFor();
+        if (size === 1) await page.screenshot({ path: `${out}/matchmaking.png` });
+      }
+    }
+    for (const player of current) await player.page.waitForFunction(() => window.rocketArenaOnline?.snapshot().phase === 'playing', null, { timeout: 90000 });
+    const reports = await Promise.all(current.map(p => p.page.evaluate(() => window.rocketArenaOnline.snapshot())));
+    assert.equal(new Set(reports.map(r => r.matchId)).size, 1);
+    assert.equal(new Set(reports.map(r => r.self)).size, size * 2);
+    assert(reports.every(r => r.roster.length === size * 2 && r.authoritative[2] === size * 2));
+    const room = app.lobby.rooms.get(reports[0].matchId);
+    await primary.page.bringToFront();
+    const before = room.arena.state.slice(22, 22 + size * 2 * 51);
+    await primary.page.keyboard.down('KeyW'); await delay(500); await primary.page.keyboard.up('KeyW');
+    await primary.page.keyboard.down('Space'); await delay(90); await primary.page.keyboard.up('Space');
+    await delay(300);
+    assert.notDeepEqual(room.arena.state.slice(22, 22 + size * 2 * 51), before);
+    await primary.page.screenshot({ path: `${out}/gameplay-${size}v${size}.png` });
+    if (size === 1) {
+      const oldSelf = reports[0].self;
+      await primary.page.reload({ waitUntil: 'domcontentloaded' });
+      await primary.page.waitForFunction(() => window.rocketArenaOnline?.snapshot().phase === 'playing', null, { timeout: 90000 });
+      const reconnected = await primary.page.evaluate(() => window.rocketArenaOnline.snapshot());
+      assert.equal(reconnected.matchId, room.id); assert.equal(reconnected.self, oldSelf);
+      assert.equal(room.arena.state[2], 2);
+      checks.push('Full browser refresh restores the same match/team/car slot');
+      await primary.page.screenshot({ path: `${out}/reconnected-gameplay.png` });
+    }
+    // Native fixture, not a network command or a production test credential.
+    room.arena.setBall([0, 5050, 110, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1800, 0, 0, 0, 0]);
+    await until(() => room.match.state.blueScore + room.match.state.orangeScore > 0);
+    for (const player of current) await player.page.waitForFunction(() => {
+      const m = window.rocketArenaOnline?.snapshot(); return m && m.authoritative && m.phase === 'goal';
+    });
+    await primary.page.screenshot({ path: `${out}/goal-${size}v${size}.png` });
+    const team = room.players.filter(p => p.team === 0).map(p => p.id);
+    for (const player of current) {
+      const identity = await player.page.evaluate(() => { const s = window.rocketArenaOnline.snapshot(); return s.roster[s.self].id; });
+      if (team.includes(identity)) await player.page.locator('[data-forfeit]').click();
+    }
+    for (const player of current) await player.page.locator('.online-results').filter({ hasText: /VICTORY|DEFEAT/ }).waitFor();
+    const completed = await Promise.all(current.map(p => p.page.evaluate(() => window.rocketArenaOnline.snapshot())));
+    assert(completed.every(r => r.result.winner === 1 && r.result.matchId === room.id));
+    measurements.push({ playlist: `${size}v${size}`, clients: size * 2, nativeHeapBytes: room.arena.heapBytes, snapshotBytes: room.lastSnapshotBytes,
+      maxServerStepMs: app.metrics.maxStepMs, clientBuffers: completed.map(r => ({ inputs: r.pendingInputs, snapshots: r.bufferedSnapshots })) });
+    if (size === 1) await primary.page.screenshot({ path: `${out}/results.png` });
+    checks.push(`${size}v${size}: ${size * 2} independent browser sessions, shared native state/goal, real keyboard input, unanimous-forfeit result`);
+    for (const player of current) await player.page.locator('[data-online="back"]').click();
+    await until(() => app.lobby.rooms.size === 0);
+  }
+  const gallery = await browser.newPage({ viewport: { width: 1100, height: 850 } }); pages.push(gallery);
+  await gallery.goto('http://127.0.0.1:4173/');
+  await gallery.setContent(`<body style="margin:0;background:#071c31;color:white;font:16px Arial;padding:30px"><h1>Original rank badge family</h1><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px">${Array.from({ length: 23 }, (_, i) => `<figure style="margin:0;text-align:center"><img style="width:125px;height:125px" src="http://127.0.0.1:4173/assets/online/ranks.svg#rank-${i}"><figcaption>${i ? `Tier ${i}` : 'Unranked'}</figcaption></figure>`).join('')}</div></body>`);
+  await gallery.locator('img').last().waitFor(); await delay(300);
+  await gallery.screenshot({ path: `${out}/rank-badges.png`, fullPage: true }); await gallery.close();
+  await app.close(); appClosed = true;
+  let backendRequests = 0;
+  primary.page.on('request', req => { if (req.url().startsWith(host)) backendRequests++; });
+  await primary.page.locator('[data-home="play"]').click(); await primary.page.locator('[data-home="freeplay"]').click();
+  await delay(400); await primary.page.screenshot({ path: `${out}/offline-freeplay.png` });
+  await primary.page.locator('.arcade-home-button').click(); await primary.page.locator('[data-home="play"]').click(); await primary.page.locator('[data-home="match"]').click();
+  await primary.page.locator('[data-match="start"]').click();
+  await primary.page.locator('#match-overlay').waitFor({ state: 'hidden', timeout: 90000 });
+  await delay(500); await primary.page.screenshot({ path: `${out}/offline-bots.png` });
+  assert.equal(backendRequests, 0); checks.push('Free Play and Bots start while backend is stopped, without game-server requests');
+  assert.equal(errors.length, 0, errors.join('\n'));
+} catch (error) {
+  for (const [index, page] of pages.entries()) if (!page.isClosed()) await page.screenshot({ path: `${out}/failure-${index}.png` }).catch(() => {});
+  throw error;
+} finally {
+  await writeFile(`${out}/report.json`, JSON.stringify({ checks, errors, measurements, node: process.version, platform: os.platform(), cpu: os.cpus()[0]?.model,
+    browser: browser?.version(), renderer: 'Chromium headless SwiftShader on GitHub-hosted Linux; not a Chromebook benchmark',
+    synthetic: true, humanInternetPlayVerified: false, liveOAuthVerified: false }, null, 2));
+  await browser?.close(); if (!appClosed) await app.close(); staticServer.kill('SIGTERM');
+  if (staticServer.exitCode === null) await once(staticServer, 'exit');
+}

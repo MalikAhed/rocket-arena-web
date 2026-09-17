@@ -4,25 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node tools/serve.mjs",
-    "start": "node tools/serve.mjs",
-    "build": "node tools/build.mjs",
+    "dev": "node --env-file-if-exists=.env tools/serve.mjs",
+    "start": "node --env-file-if-exists=.env tools/serve.mjs",
+    "build": "node --env-file-if-exists=.env tools/build.mjs",
     "verify": "node tools/verify.mjs",
     "test": "node --test tools/bot-worker.test.mjs",
     "server": "node --env-file-if-exists=.env server/index.mjs",
     "test:online": "node --test tests/online/*.test.mjs",
-    "db:migrate": "node --env-file-if-exists=.env tools/db-migrate.mjs"
+    "db:migrate": "node --env-file-if-exists=.env tools/db-migrate.mjs",
+    "art:online": "node tools/render-online-art.mjs",
+    "test:browser": "node tests/online/browser.mjs"
   },
-  "devDependencies": {
-    "esbuild": "0.25.12",
-    "playwright": "1.63.0"
-  },
-  "engines": {
-    "node": ">=22"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "2.116.0",
-    "pg": "8.23.0",
-    "ws": "8.21.3"
-  }
+  "devDependencies": { "esbuild": "0.25.12", "playwright": "1.63.0" },
+  "engines": { "node": ">=22" },
+  "dependencies": { "@supabase/supabase-js": "2.116.0", "pg": "8.23.0", "ws": "8.21.3" }
 }
