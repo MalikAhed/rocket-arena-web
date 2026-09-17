@@ -48,8 +48,8 @@
 #app .online-roster .blue-team { border-bottom:2px solid #40beff; }
 #app .online-roster .orange-team { border-bottom:2px solid #ffae63; }
 #app .online-network { position:absolute;left:14px;bottom:12px;background:#031729d9;padding:7px 10px;border-radius:4px;max-width:50vw;font-size:11px; }
-#app .online-hud button { position:absolute;right:16px;bottom:70px;pointer-events:auto;min-height:34px;font-size:10px;padding:8px;background:#081b30dc; }
-#app .online-hud [data-forfeit] { bottom:110px; }
+#app .online-hud button { position:absolute;right:16px;top:155px;bottom:auto;pointer-events:auto;min-height:34px;font-size:10px;padding:8px;background:#081b30dc; }
+#app .online-hud [data-forfeit] { top:110px;bottom:auto; }
 @media(max-height:620px) { #app .arena-play__grid { top:17%;left:15%;right:15%;gap:10px;max-width:760px; } #app .arena-mode { aspect-ratio:2.4; } #app .online-dialog { padding:18px; } #app .online-playlist img { max-height:135px; } }
 @media(max-width:640px) { #app .arena-play__grid { left:5%;right:5%;top:23%; } #app .arena-mode { aspect-ratio:1.25; } #app .arena-mode strong { font-size:18px; } #app .arena-mode small { line-height:1.4; } #app .online-panel { padding:10px; } #app .online-dialog { padding:18px;max-height:calc(100dvh - 20px); } #app .online-playlists { gap:8px; } #app .online-playlist strong { font-size:23px; } #app .online-playlist img { aspect-ratio:1.15; } #app .online-account-row { display:block; } #app .online-identity { padding-top:10px; } #app .online-dialog h1 { font-size:28px; } #app .online-actions button { flex:1 1 130px; } #app .online-roster { top:70px; } }
 @media(prefers-reduced-motion:reduce) { #app .online-dialog button { transition:none; } }

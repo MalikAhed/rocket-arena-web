@@ -20,7 +20,8 @@ try {
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling'] });
   async function newPlayer(name) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-    const page = await context.newPage(); pages.push(page);
+    const page = await context.newPage(); page.setDefaultTimeout(25000); pages.push(page);
+    console.log('Opening independent browser:', name);
     page.on('pageerror', error => errors.push(String(error)));
     await page.goto('http://127.0.0.1:4173/?physicsDebug=1', { waitUntil: 'domcontentloaded' });
     await page.locator('.arena-home:not([hidden])').waitFor({ timeout: 90000 });
@@ -28,7 +29,16 @@ try {
   }
   const primary = await newPlayer('Browser Player 1');
   await primary.page.locator('[data-home="play"]').click();
+  const withinViewport = await primary.page.locator('.arena-mode').evaluateAll(items => items.every(item => {
+    const r = item.getBoundingClientRect(), label = item.querySelector('small').getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= innerHeight && label.bottom <= innerHeight;
+  }));
+  assert(withinViewport, 'All four mode cards and their labels must fit the screen');
   await primary.page.screenshot({ path: `${out}/mode-menu.png` });
+  await primary.page.setViewportSize({width: 390, height: 844});
+  await primary.page.screenshot({ path: `${out}/mode-menu-mobile.png` });
+  assert(await primary.page.locator('.arena-mode').evaluateAll(items => items.every(item => item.getBoundingClientRect().bottom <= innerHeight)));
+  await primary.page.setViewportSize({width: 1280, height: 720});
   await primary.page.locator('[data-home="ranked"]').click();
   await primary.page.locator('.online-status').filter({ hasText: /Sign in/ }).waitFor();
   assert(await primary.page.locator('[data-online="search"]').isHidden());
@@ -37,6 +47,7 @@ try {
   await primary.page.locator('[data-online="back"]').click();
   const players = [primary];
   for (const size of [1, 2, 3]) {
+    console.log('Testing playlist', size);
     while (players.length < size * 2) players.push(await newPlayer(`Browser Player ${players.length + 1}`));
     const current = players.slice(0, size * 2);
     for (const player of current) {
@@ -106,7 +117,7 @@ try {
   primary.page.on('request', req => { if (req.url().startsWith(host)) backendRequests++; });
   await primary.page.locator('[data-home="play"]').click(); await primary.page.locator('[data-home="freeplay"]').click();
   await delay(400); await primary.page.screenshot({ path: `${out}/offline-freeplay.png` });
-  await primary.page.locator('.arcade-home-button').click(); await primary.page.locator('[data-home="play"]').click(); await primary.page.locator('[data-home="match"]').click();
+  await primary.page.keyboard.press('Escape'); await primary.page.locator('[data-pause="home"]').click(); await primary.page.locator('[data-home="play"]').click(); await primary.page.locator('[data-home="match"]').click();
   await primary.page.locator('[data-match="start"]').click();
   await primary.page.locator('#match-overlay').waitFor({ state: 'hidden', timeout: 90000 });
   await delay(500); await primary.page.screenshot({ path: `${out}/offline-bots.png` });

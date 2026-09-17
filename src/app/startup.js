@@ -1,3 +1,4 @@
+import { mountOnline } from '../online/interface.js';
 import { setCarMaterialQuality } from "../materials/car.js";
 import {FennecV2Post} from '../rendering/fennec-v2-post.js';
 import { ReferencePost } from '../rendering/reference-post.js';
@@ -309,7 +310,7 @@ async function startGame() {
     J = new Set();
   let motionEffects = null;
   const speedLines = new SpeedLines();
-  let home = null, pauseMenu = null, goalPresentation = null, pendingGoal = null, replayBuffer = null, arenaEffects = null;
+  let online = null, home = null, pauseMenu = null, goalPresentation = null, pendingGoal = null, replayBuffer = null, arenaEffects = null;
   let replayClock = 0, lastReplayRecord = -1, previewDirty = true;
   let previewRestore = null, returnHomeAfter = null, returnPauseAfter = false, goalSkipDown = false;
   let ne = !1,
@@ -348,7 +349,7 @@ async function startGame() {
       le = !1;
       const W = !ne && (J.size === 0 ||
         (J.size === 1 && J.has("goal") && goalPresentation?.active && !goalPresentation.replaying));
-      ((a.state.paused = a.state.mode === "match" && (!W || p)),
+      ((a.state.paused = !online?.active && a.state.mode === "match" && (!W || p)),
         (x.enabled = W),
         (R.enabled = W),
         (D.enabled = W),
@@ -401,6 +402,7 @@ async function startGame() {
         gt == null || gt.setFpsLimit(W.limitFps ? W.maxFps : null));
     }),
     ft = () => {
+      if (online?.visible) { online.escape(); return; }
       if (home?.visible) return;
       if (pauseMenu?.isOpen) { pauseMenu.hide(); st(); return; }
       if (goalPresentation?.active) { goalPresentation.finish(); return; }
@@ -498,6 +500,7 @@ async function startGame() {
       ne = !1;
     },
     onStart: async (W) => {
+      online?.leave();
       returnHomeAfter = null;
       goalPresentation?.finish({ cancel: true });
       (await Promise.all([o.load(), N.ensureOpponent(JA(o.id).carVisual)]),
@@ -511,6 +514,7 @@ async function startGame() {
           pe.update(a.state)));
     },
     onLeave: () => {
+      if (online?.active) { online.leave(); return; }
       returnHomeAfter = null;
       goalPresentation?.finish({ cancel: true });
       (v(),
@@ -528,7 +532,7 @@ async function startGame() {
       (W) => {
         W.code !== "KeyM" ||
           J.has("physics-lab") ||
-          home?.visible || goalPresentation?.active ||
+          home?.visible || online?.active || online?.visible || goalPresentation?.active ||
           W.repeat ||
           W.ctrlKey ||
           W.metaKey ||
@@ -689,7 +693,7 @@ async function startGame() {
             : nn.pressed) ?? !1,
         Ft = W ? JSON.stringify([W.id, W.index]) : null;
       (Ft !== Me && (ve = fe), (Me = Ft));
-      const Nt = fe && !ve && !Xe.isOpen && !(de != null && de.isOpen) && !J.has("physics-lab");
+      const Nt = !online?.active && !online?.visible && fe && !ve && !Xe.isOpen && !(de != null && de.isOpen) && !J.has("physics-lab");
       (Nt && (pe.isOpen ? pe.hide() : pe.show()),
         (ve = fe),
         Nt && (R.capturing = !0));
@@ -801,12 +805,12 @@ async function startGame() {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   nd.remove();
   function wt(W) {
-    if (home?.visible) {
+    if (home?.visible && !online?.active) {
       ze = W; s.sync(W);
       if (home.consumeDirty() || previewDirty) { renderHomePreview(); previewDirty = false; return; }
       return false;
     }
-    if (pauseMenu?.isOpen) {
+    if (pauseMenu?.isOpen && !online?.active) {
       ze = W; s.sync(W);
       if (previewDirty) { renderGame(N.scene,H.camera); previewDirty = false; return; }
       return false;
@@ -827,12 +831,12 @@ async function startGame() {
     var ar;
     He.frameStart();
     const fe = Math.min((W - ze) / 1e3, 0.1);
-    n.setGoalExplosionEnabled(a.state.mode === "match" || !V.disableGoalReset);
+    n.setGoalExplosionEnabled(!online?.active && (a.state.mode === "match" || !V.disableGoalReset));
     ((ze = W),
       (a.state.paused =
-        a.state.mode === "match" &&
+        !online?.active && a.state.mode === "match" &&
         (ne || J.size > 0 || document.hidden || !document.hasFocus() || p)),
-      a.state.paused || (a.state.mode === "match" && a.state.phase === "ended") || (a.state.mode === "freeplay" && J.size > 0)
+      online?.active ? (he(), online.update(W, ke, s)) : a.state.paused || (a.state.mode === "match" && a.state.phase === "ended") || (a.state.mode === "freeplay" && J.size > 0)
         ? (he(), s.sync(W))
         : s.update(W, he, a.state.mode === "match" ? me : void 0),
       a.state.mode === "freeplay" &&
@@ -1120,6 +1124,8 @@ async function startGame() {
       }
       qe("home", open);
     },
+    casual: () => { pe.options.onLeave(); void online.open("casual"); },
+    ranked: () => { pe.options.onLeave(); void online.open("ranked"); },
     match: () => { returnHomeAfter = "match"; ne = true; pe.show(); },
     freeplay: () => { pe.options.onLeave(); st(); },
     garage: () => { returnHomeAfter = "car"; ne = true; de.show(); },
@@ -1134,7 +1140,30 @@ async function startGame() {
   an.querySelector("#settings-button").addEventListener("click",event=>{
     event.preventDefault();event.stopImmediatePropagation();pauseMenu.show();
   },true);
+  online = mountOnline(an, {
+    sim: n, match: a, visual: () => i,
+    modal: open => { ne = open; qe("online", open); },
+    resume: () => st(), home: () => home.show(), closeHome: () => home.close(),
+    bots: () => { ne = true; pe.show(); },
+    prepare: async (roster, order, valid) => {
+      goalPresentation?.finish({ cancel: true }); v(); p = false;
+      const ordered = order.map(index => roster[index]);
+      await N.prepareOnlineRoster(ordered);
+      if (!valid()) { while (N.cars.length > 1) N.removeOpponent(); return; }
+      n.configureOnline(ordered); syncNativeGeometry(); a.start(); a.state.phase = "waiting";
+      n.setGoalExplosionEnabled(false); s.sync(); n.resetView();
+    },
+    restore: () => {
+      while (N.cars.length > 1) N.removeOpponent();
+      N.cars[0].userData.garageTeam = e; N.applyGarageCustomization(i);
+      pe.options.onLeave();
+    },
+  });
+  if (new URLSearchParams(location.search).get("physicsDebug") === "1") {
+    Object.defineProperty(window, "rocketArenaOnline", { value: Object.freeze({ snapshot: () => online.diagnostics() }) });
+  }
   home.show();
+  void online.restoreIntent();
   ((gt = new FrameScheduler(te.getContext(), wt, (W) => He.displayFrame(W))),
     gt.setFpsLimit(We.limitFps ? We.maxFps : null),
     xe(),

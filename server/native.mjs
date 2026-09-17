@@ -64,7 +64,7 @@ export class NativeArena {
   }
   dispose() {
     if (!this.module) return;
-    this.module._free(this.scratch); this.module._physics_destroyArena?.();
+    this.module._free(this.scratch); this.module._physics_destroy?.();
     this.module = null; this.configs = [];
   }
 }

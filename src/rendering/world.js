@@ -239,6 +239,18 @@ class GameWorld {
         this.scene.add(this.opponentSun, this.opponentSunTarget),
         this.addCar(getTeamAssignment(false).botTeam, visual)));
   }
+  async prepareOnlineRoster(roster) {
+    while (this.cars.length > 1) this.removeOpponent();
+    this.cars[0].userData.garageTeam = roster[0].team;
+    this.applyGarageCustomization(this.carVisual);
+    for (const player of roster.slice(1)) {
+      const asset = this.opponentCarAssets.get(player.visual) ?? await sketchfabModels.loadCar(player.visual);
+      this.opponentCarAssets.set(player.visual, asset);
+      this.addCar(player.team, player.visual, asset);
+    }
+    await Promise.all(this.carBoosts.flatMap(boosts => boosts.map(boost => boost.preload())));
+    this.markRenderTreeChanged();
+  }
   async prepareAssets() {
     (await this.ensureOpponent(),
       (this.cars[no].visible = !1),
@@ -246,12 +258,12 @@ class GameWorld {
         this.carBoosts.flatMap((e) => e.map((t) => t.preload())),
       ));
   }
-  addCar(e, t = this.carVisual) {
+  addCar(e, t = this.carVisual, assetOverride = null) {
     const n = new dt(),
       r = this.cars.length === no,
       s = t === "realistic",
       a = t === "flat-car",
-      custom = isSketchfabCar(t) ? (r ? this.opponentCarAsset : this.sketchfabCarAsset) : null;
+      custom = assetOverride ?? (isSketchfabCar(t) ? (r ? this.opponentCarAsset : this.sketchfabCarAsset) : null);
     let o = null,
       A;
     if (s) {

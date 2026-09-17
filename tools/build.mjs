@@ -1,3 +1,4 @@
+import { onlineConfiguration } from './online-config.mjs';
 import { build } from 'esbuild';
 import { cp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import { resolve, join, extname } from 'node:path';
@@ -6,13 +7,15 @@ const dist = resolve(root, 'dist');
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await cp(resolve(root, 'public'), dist, { recursive: true });
+await mkdir(resolve(dist, 'assets/online'), { recursive: true });
+await writeFile(resolve(dist, 'assets/online/config.json'), JSON.stringify(onlineConfiguration()));
 await cp(resolve(root, 'SOURCE.md'), resolve(dist, 'SOURCE.md'));
 let html = await readFile(resolve(root, 'index.html'), 'utf8');
 const css = [...html.matchAll(/href="(\/src\/[^" ]+\.css)"/g)].map(m => m[1]);
 await build({
-  absWorkingDir: root, entryPoints: { 'app/game': 'src/game.js', 'src/materials/reference-field-worker': 'src/materials/reference-field-worker.js' },
+  absWorkingDir: root, entryPoints: { 'assets/online/auth-sdk': 'src/online/auth-sdk.js', 'app/game': 'src/game.js', 'src/materials/reference-field-worker': 'src/materials/reference-field-worker.js' },
   outdir: dist, bundle: true, minify: true, splitting: true, format: 'esm', target: ['es2022'],
-  external: ['/physics/*'], legalComments: 'linked', chunkNames: 'app/chunks/[name]-[hash]',
+  external: ['/physics/*', '/assets/online/auth-sdk.js'], legalComments: 'linked', chunkNames: 'app/chunks/[name]-[hash]',
   plugins: [{ name: 'browser-only-physics', setup(b) {
     b.onResolve({ filter: /__vite-browser-external/ }, () => ({ path: resolve(root, 'public/assets/__vite-browser-external-BIHI7g3E.js') }));
   } }],

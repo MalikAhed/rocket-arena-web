@@ -14,6 +14,12 @@ export function configuration(env = process.env) {
   const supabaseUrl = env.SUPABASE_URL ?? '';
   if (supabaseUrl && !/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(supabaseUrl)) throw new Error('SUPABASE_URL must be a hosted Supabase project URL');
   if (production && env.DATABASE_URL && env.DATABASE_SSL !== 'verify-full') throw new Error('Production PostgreSQL requires DATABASE_SSL=verify-full');
+  if (env.DATABASE_URL) {
+    const url = new URL(env.DATABASE_URL);
+    if (!["postgres:", "postgresql:"].includes(url.protocol)) throw new Error('DATABASE_URL must use PostgreSQL');
+    if ([...url.searchParams.keys()].some(key => key.toLowerCase().startsWith('ssl'))) throw new Error('Configure TLS with DATABASE_SSL/DATABASE_CA_FILE, not URL options that override certificate validation');
+    if (url.port === '6543') throw new Error('Use a direct or SESSION pooler connection, not transaction mode on port 6543');
+  }
   const rating = validateRatingConfig(env.RATING_CONFIG_FILE ? JSON.parse(readFileSync(env.RATING_CONFIG_FILE, 'utf8')) : DEFAULT_RATING_CONFIG);
   return { production, serverId: randomUUID(), host: env.HOST ?? '0.0.0.0', port: number(env, 'PORT', 8080, 0, 65535), origins,
     region: env.REGION ?? 'local', maxRooms: number(env, 'MAX_ROOMS', 2, 1, 8), maxConnections: number(env, 'MAX_CONNECTIONS', 48, 2, 256),

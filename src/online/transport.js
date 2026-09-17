@@ -3,7 +3,7 @@ export class Transport {
   constructor({ serverUrl, token, onMessage, onSnapshot, onState }) {
     this.url = serverUrl.replace(/^http/, 'ws').replace(/\/$/, '') + '/play';
     this.token = token; this.onMessage = onMessage; this.onSnapshot = onSnapshot; this.onState = onState;
-    this.stopped = false; this.connected = false; this.inMatch = false; this.retryStart = 0; this.retry = 0;
+    this.stopped = false; this.connected = false; this.inMatch = false; this.retryStart = 0; this.retry = 0; this.graceMs = 30000;
   }
   connect() {
     if (this.stopped) return;
@@ -26,7 +26,7 @@ export class Transport {
             else this.send({ type: 'ping', nonce: Math.round(performance.now()) });
           }, 5000);
         }
-        if (message.type === 'reserved') this.inMatch = true;
+        if (message.type === 'reserved') { this.inMatch = true; this.graceMs = message.graceMs; }
         if (['cancelled', 'result'].includes(message.type)) this.inMatch = false;
         if (message.type === 'error' && ['session_expired', 'update_required', 'reconnect_expired', 'session_replaced'].includes(message.code)) this.stop();
         this.onMessage(message);
@@ -39,7 +39,7 @@ export class Transport {
       this.connected = false;
       if (this.inMatch) {
         this.retryStart ||= performance.now();
-        if (performance.now() - this.retryStart < 30000) {
+        if (performance.now() - this.retryStart < this.graceMs) {
           this.onState('reconnecting');
           this.reconnectTimer = setTimeout(() => this.connect(), Math.min(4000, 500 * 2 ** this.retry++)); return;
         }

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../../server/store.mjs';
 import { Sessions } from '../../server/auth.mjs';
+import { createGameServer } from '../../server/index.mjs';
+import { configuration } from '../../server/config.mjs';
 
 // Disposable PostgreSQL only. No test identity shortcut is exposed by the server.
 test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recovery and authorization', { skip: !process.env.ONLINE_TEST_DATABASE_URL }, async t => {
@@ -79,13 +81,20 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
       const second = new Store({ ...options, serverId: randomUUID() });
       try { await assert.rejects(second.init(), /lease/); } finally { await second.close(); }
       const room = await reserve();
-      await store.close();
-      const restarted = new Store({ ...options, serverId: randomUUID() });
+      const app = await createGameServer(configuration({ PORT: '0', DATABASE_URL: options.connectionString, SEASON_ID: options.season }));
       try {
-        await restarted.init();
-        assert.equal((await restarted.pool.query('SELECT status FROM arena.matches WHERE id=$1', [room.id])).rows[0].status, 'cancelled');
-        assert.equal((await restarted.getProfile(players[0].accountId)).progress[0].games, 2);
-      } finally { await restarted.close(); }
+        const origin = `http://127.0.0.1:${app.port}`;
+        assert.equal((await fetch(origin + '/healthz')).status, 200);
+        assert.equal((await fetch(origin + '/readyz')).status, 503);
+        assert.equal((await (await fetch(origin + '/healthz')).json()).status, 'warming');
+        const admission = await fetch(origin + '/session', { method: 'POST', headers: {Origin: 'http://127.0.0.1:4173', 'Content-Type': 'application/json'}, body: JSON.stringify({name:'Waiting Player'}) });
+        assert.equal(admission.status, 503);
+        await store.close();
+        assert.equal(await app.initialization, true);
+        assert.equal((await fetch(origin + '/readyz')).status, 200);
+        assert.equal((await app.store.pool.query('SELECT status FROM arena.matches WHERE id=$1', [room.id])).rows[0].status, 'cancelled');
+        assert.equal((await app.store.getProfile(players[0].accountId)).progress[0].games, 2);
+      } finally { await app.close(); }
     });
   } finally { if (!store.pool.ended) await store.close(); }
 });

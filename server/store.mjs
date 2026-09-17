@@ -13,13 +13,21 @@ export class Store {
     this.healthy = false; this.leaseLost = false;
   }
   async migrate() { await this.pool.query(await readFile(new URL('./migrations/001_online.sql', import.meta.url), 'utf8')); }
-  async init() {
+  async init({ waitForLeaseMs = 0 } = {}) {
     // Single authoritative process only. A session pooler/direct PostgreSQL
     // connection is required; a transaction-mode pooler cannot hold this lease.
     this.lease = await this.pool.connect();
     this.lease.on('error', () => { this.healthy = false; this.leaseLost = true; this.onLeaseLost(); });
-    const lock = await this.lease.query("SELECT pg_try_advisory_lock(hashtext('rocket-arena-online-v1')) AS locked");
-    if (!lock.rows[0].locked) { this.lease.release(); this.lease = null; throw new Error('Another authoritative server holds the database lease'); }
+    const deadline = performance.now() + waitForLeaseMs;
+    while (true) {
+      const lock = await this.lease.query("SELECT pg_try_advisory_lock(hashtext('rocket-arena-online-v1')) AS locked");
+      if (lock.rows[0].locked) break;
+      if (this.closeRequested || performance.now() >= deadline) {
+        this.lease.release(); this.lease = null;
+        throw new Error('Another authoritative server holds the database lease');
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
     await this.pool.query('INSERT INTO arena.seasons(id,config_version,config) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [this.season, this.rating.version, this.rating]);
     const { rows } = await this.pool.query('SELECT config FROM arena.seasons WHERE id=$1', [this.season]);
     // Configuration is frozen per season so an old result never uses new math.

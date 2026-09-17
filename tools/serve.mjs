@@ -1,3 +1,4 @@
+import { onlineConfiguration } from './online-config.mjs';
 import { createReadStream, watch } from "node:fs";
 import { stat, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -6,7 +7,7 @@ import { extname, join, relative, resolve } from "node:path";
 const projectRoot = resolve(import.meta.dirname, "..");
 const production = process.env.ROCKET_ARENA_DIST === '1';
 const publicRoot = join(projectRoot, production ? "dist" : "public");
-const hostname = "127.0.0.1";
+const hostname = process.env.HOST || "127.0.0.1";
 const port = Number.parseInt(process.env.ROCKET_ARENA_PORT || process.env.CAR_SOCCER_PORT || process.env.PORT || "4173", 10);
 const liveReload = !production && (process.env.ROCKET_ARENA_LIVE_RELOAD || process.env.CAR_SOCCER_LIVE_RELOAD || '1') === "1";
 const clients = new Set();
@@ -33,6 +34,7 @@ const contentTypes = {
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".onnx": "application/octet-stream",
+  ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -90,6 +92,18 @@ const server = createServer(async (request, response) => {
   if (liveReload && pathname === '/__live/client.js') {
     response.writeHead(200, { 'Content-Type': 'application/javascript' });
     response.end("new EventSource('/__live/events').onmessage=()=>location.reload();");
+    return;
+  }
+  if (!production && pathname === '/assets/online/config.json') {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(onlineConfiguration())); return;
+  }
+  if (!production && pathname === '/assets/online/auth-sdk.js') {
+    try {
+      const { build } = await import('esbuild');
+      const result = await build({ entryPoints: [join(projectRoot, 'src/online/auth-sdk.js')], bundle: true, write: false, format: 'esm', platform: 'browser', minify: true });
+      response.writeHead(200, { 'Content-Type': 'application/javascript' }); response.end(result.outputFiles[0].text);
+    } catch { response.writeHead(503); response.end('throw Error("Install online dependencies with npm ci first")'); }
     return;
   }
   const filePath = requestedFile(pathname);

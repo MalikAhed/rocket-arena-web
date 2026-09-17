@@ -143,7 +143,7 @@ class MatchMenu {
                  aria-labelledby="match-title" tabindex="-1">
           <header class="match-panel__head">
             <div>
-              <h2 id="match-title">Casual 1v1</h2>
+              <h2 id="match-title">Bots · Offline 1v1</h2>
               <p>Play solo against AI. Choose an opponent, then hit the field.</p>
             </div>
             <button class="match-panel__close" type="button" data-match="close" aria-label="Close play menu">

@@ -10,7 +10,7 @@ const car = `<g id="car"><ellipse cx="119" cy="153" rx="113" ry="22" fill="#0314
 <path d="m14 108 58 18 137-26-5 20-131 29-61-23Z" fill="#071b30"/>
 <path d="m77 128 110-22-8 11-92 20Z" fill="#3c546a"/>
 <path d="m29 83 53 17 123-24-35 19-88 24-61-19Z" fill="#fff" opacity=".33"/>
-<path d="m19 102 44 14-1 10-43-13Z m87 119 29-5-1 9-29 6Z M164 103l34-7-4 11-33 6Z" fill="#bafaff"/>
+<path d="m19 102 44 14-1 10-43-13Z M87 119l29-5-1 9-29 6Z M164 103l34-7-4 11-33 6Z" fill="#bafaff"/>
 <g fill="#092033" stroke="#06111f" stroke-width="5"><ellipse cx="57" cy="130" rx="21" ry="29" transform="rotate(-9 57 130)"/><ellipse cx="189" cy="107" rx="19" ry="26" transform="rotate(9 189 107)"/></g>
 <g fill="#7aa4b8" stroke="#183b51" stroke-width="5"><ellipse cx="57" cy="130" rx="11" ry="18"/><ellipse cx="189" cy="107" rx="10" ry="16"/></g>
 <path d="m18 64 12-15 65 20-5 10Z" fill="#15384e"/><path d="m124 42 13 41" stroke="#d0f5ff" stroke-width="5" opacity=".65"/>

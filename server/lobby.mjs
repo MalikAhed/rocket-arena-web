@@ -37,7 +37,7 @@ export class Lobby {
     else { this.entries.delete(session.id); session.active = false; }
   }
   async join(session, { mode, size, visual, request, region }) {
-    if (this.stopping) throw new PublicError('server_unavailable');
+    if (this.stopping || this.initializing) throw new PublicError('server_unavailable');
     if (!['casual', 'ranked'].includes(mode) || ![1, 2, 3].includes(size) || !CAR_VISUALS.includes(visual) || !Number.isSafeInteger(request) || request < 1) throw new PublicError('invalid_queue');
     if (region !== this.region) throw new PublicError('region_unavailable');
     if (this.entries.has(session.id)) throw new PublicError('already_queued_or_playing');
@@ -79,7 +79,7 @@ export class Lobby {
     return room;
   }
   matchmake(now = performance.now()) {
-    if (this.stopping) return;
+    if (this.stopping || this.initializing) return;
     for (const mode of ['casual', 'ranked']) for (const size of [1, 2, 3]) {
       const waiting = [...this.entries.values()].filter(p => p.status === 'queued' && p.mode === mode && p.size === size);
       for (const oldest of waiting) {

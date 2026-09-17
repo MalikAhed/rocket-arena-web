@@ -19,9 +19,9 @@ export async function createGameServer(config = configuration(), dependencies = 
   let lobby;
   const store = dependencies.store ?? (config.databaseUrl ? new Store({ connectionString: config.databaseUrl, ssl: config.ssl, season: config.season,
     rating: config.rating, serverId: config.serverId, onLeaseLost: () => lobby?.shutdown('database_lease_lost') }) : null);
-  if (store && !dependencies.store) await store.init();
   const sessions = dependencies.sessions ?? new Sessions({ supabaseUrl: config.supabaseUrl, publicKey: config.publicKey, store });
   lobby = new Lobby({ sessions, store, region: config.region, maxRooms: config.maxRooms, roomConfig: config.roomConfig });
+  lobby.initializing = !!store && !dependencies.store;
   const rates = new BoundedRates(), peers = new Set();
   const metrics = { ticks: 0, stalls: 0, maxStepMs: 0, sentBytes: 0, started: Date.now() };
   const originAllowed = origin => config.origins.includes(origin);
@@ -39,12 +39,13 @@ export async function createGameServer(config = configuration(), dependencies = 
     const path = new URL(request.url, 'http://server.invalid').pathname;
     try {
       if (request.method === 'GET' && ['/healthz', '/readyz'].includes(path)) {
-        const ready = !lobby.stopping && (!store || store.healthy);
-        send(path === '/readyz' && !ready ? 503 : 200, { status: lobby.stopping ? 'draining' : 'ok', ready, protocol: PROTOCOL,
+        const ready = !lobby.stopping && !lobby.initializing && (!store || store.healthy);
+        send(path === '/readyz' && !ready ? 503 : 200, { status: lobby.stopping ? 'draining' : lobby.initializing ? 'warming' : 'ok', ready, protocol: PROTOCOL,
           physics: PHYSICS_SHA256, region: config.region, ranked: sessions.configured && !!store?.healthy,
           rooms: lobby.rooms.size, capacity: config.maxRooms, beta: true }); return;
       }
       if (!originAllowed(origin)) throw new PublicError('origin_forbidden');
+      if (lobby.initializing) throw new PublicError('server_warming', 'The replacement server is warming up. No new matches can start yet.');
       const ip = request.socket.remoteAddress;
       if (!rates.take(`http:${ip}`, 1, 20)) throw new PublicError('rate_limited');
       if (request.method === 'POST' && path === '/session') {
@@ -66,12 +67,12 @@ export async function createGameServer(config = configuration(), dependencies = 
       }
       if (request.method === 'POST' && path === '/logout') { lobby.leave(session); sessions.revoke(token); lobby.peers.get(session.id)?.close(1000, 'signed_out'); send(200, { signedOut: true }); return; }
       send(404, { error: 'not_found' });
-    } catch (error) { const safe = publicError(error); send(safe.code === 'rate_limited' ? 429 : safe.code === 'server_unavailable' || safe.code.endsWith('unavailable') ? 503 : 400, safe); }
+    } catch (error) { const safe = publicError(error); send(safe.code === 'rate_limited' ? 429 : safe.code === 'server_unavailable' || safe.code === 'server_warming' || safe.code.endsWith('unavailable') ? 503 : 400, safe); }
   });
   server.requestTimeout = 10000; server.headersTimeout = 10000;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 8192, perMessageDeflate: false });
   server.on('upgrade', (request, socket, head) => {
-    if (new URL(request.url, 'http://server.invalid').pathname !== '/play' || !originAllowed(request.headers.origin) || lobby.stopping || peers.size >= config.maxConnections || !rates.take(`ws:${request.socket.remoteAddress}`, 0.2, 8)) {
+    if (new URL(request.url, 'http://server.invalid').pathname !== '/play' || !originAllowed(request.headers.origin) || lobby.stopping || lobby.initializing || peers.size >= config.maxConnections || !rates.take(`ws:${request.socket.remoteAddress}`, 0.2, 8)) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }
     wss.handleUpgrade(request, socket, head, ws => wss.emit('connection', ws, request));
@@ -148,10 +149,23 @@ export async function createGameServer(config = configuration(), dependencies = 
   }, 4);
   const readiness = store ? setInterval(() => { void store.ready(); }, 15000) : null;
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
-  return { server, wss, lobby, sessions, store, metrics, port: server.address().port,
+  // Liveness binds before the exclusive database lease is acquired. Render
+  // can route a replacement and terminate the old process; readiness remains
+  // false throughout this deliberate beta maintenance window. No split brain.
+  const initialization = lobby.initializing
+    ? store.init({ waitForLeaseMs: 120000 }).then(() => { lobby.initializing = false; return true; })
+      .catch(() => { lobby.initializing = false; lobby.shutdown('database_startup_failed'); return false; })
+    : Promise.resolve(true);
+  return { server, wss, lobby, sessions, store, metrics, initialization, port: server.address().port,
     async close() {
-      clearInterval(timer); clearInterval(readiness); lobby.shutdown();
-      await Promise.all([...lobby.rooms.values()].map(room => room.persist()));
+      clearInterval(timer); clearInterval(readiness);
+      if (store && !dependencies.store) store.closeRequested = true;
+      await initialization;
+      lobby.shutdown();
+      const pending = [...lobby.rooms.values()];
+      await Promise.all(pending.map(room => room.persist()));
+      const deadline = performance.now() + 6000;
+      while (pending.some(room => room.busy) && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
       for (const peer of peers) peer.ws.terminate();
       for (const room of [...lobby.rooms.values()]) room.dispose();
       await new Promise(resolve => wss.close(resolve));
@@ -168,4 +182,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const forced = setTimeout(() => process.exit(1), 8000); forced.unref();
     await app.close(); process.exit(0);
   });
+  if (!await app.initialization) { await app.close(); process.exitCode = 1; }
 }

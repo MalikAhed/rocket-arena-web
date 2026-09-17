@@ -1,4 +1,4 @@
-import { PHYSICS_PRESETS, resolvePhysicsSelection } from "./presets.js";
+import { PHYSICS_PRESETS, resolvePhysicsSelection, resolveVisualHitboxFamily } from "./presets.js";
 import { initializeGameplayPhysics } from "./source-runtime.js";
 import { addConfiguredCar, readNativeCarConfig } from "./car-config.js";
 import { _ } from "../core/class-fields.js";
@@ -81,6 +81,16 @@ class PhysicsSimulation {
     if (t && this.addCar(s, "default") !== no)
       throw new Error("Opponent creation failed");
     (this.resetKickoff(), this.resetView());
+  }
+  configureOnline(roster) {
+    if (this.physicsSelection.engine !== "experimental") throw new Error("Online requires the default source physics. Remove physics=original from the URL and reload.");
+    if (this.module._physics_createArena() !== 1) throw new Error("Arena creation failed");
+    this.carConfigs = [];
+    roster.forEach((player, index) => {
+      if (addConfiguredCar(this.module, player.team, PHYSICS_PRESETS[resolveVisualHitboxFamily(player.visual)]) !== index) throw new Error("Online car creation failed");
+      this.carConfigs.push(readNativeCarConfig(this.module, index));
+    });
+    this.setUnlimitedBoost(false); this.resetKickoff(); this.resetView();
   }
   async switchPhysics(selection, kind, match, team, unlimited, canCommit = () => true) {
     const candidate = new PhysicsSimulation(selection);

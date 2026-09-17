@@ -27,7 +27,7 @@ export function mountOnline(root, hooks) {
     <header class="online-heading"><div><p class="online-eyebrow">ROCKET ARENA · ONLINE BETA</p><h1 id="online-title">CASUAL</h1></div><button type="button" data-online="back" class="online-close" aria-label="Back to Play">×</button></header>
     <p class="online-subtitle">Real players. One shared arena. No replacement bots.</p>
     <form class="online-form">
-      <div class="online-playlists" role="group" aria-label="Online playlist">${[1, 2, 3].map(n => `<button type="button" data-size="${n}" aria-pressed="${n === 1}" class="online-playlist"><img src="/assets/online/illustrations.svg#team-${n}" alt="" draggable="false"><strong>${n}v${n}</strong><small>${['DUEL', 'DOUBLES', 'STANDARD'][n - 1]}</small></button>`).join('')}</div>
+      <div class="online-playlists" role="group" aria-label="Online playlist">${[1, 2, 3].map(n => `<button type="button" data-size="${n}" aria-pressed="${n === 1}" class="online-playlist"><img src="/assets/online/team-${n}.webp" alt="" draggable="false"><strong>${n}v${n}</strong><small>${['DUEL', 'DOUBLES', 'STANDARD'][n - 1]}</small></button>`).join('')}</div>
       <div class="online-account-row"><label class="online-name">DISPLAY NAME<input name="displayName" autocomplete="nickname" minlength="2" maxlength="24" value="Player" required></label><div class="online-identity">Guest · Casual only</div></div>
       <p class="online-status" role="status" aria-live="polite">Select a playlist to begin.</p>
       <div class="online-progress" hidden></div>
@@ -83,7 +83,7 @@ export function mountOnline(root, hooks) {
     progress.hidden = mode !== 'ranked' || !rating || active;
     if (!progress.hidden) {
       progress.replaceChildren(); const badge = document.createElement('img'); badge.src = `/assets/online/ranks.svg#rank-${rating.rank.badge}`; badge.alt = '';
-      const text = document.createElement('span'); text.textContent = `${rating.rank.name}${rating.rank.division ? ` · Division ${rating.rank.division}` : ''} · ${rating.games < 10 ? `${rating.games}/10 placements` : `${rating.mu.toFixed(0)} MMR`}`;
+      const text = document.createElement('span'); text.textContent = `${rating.rank.name}${rating.rank.division ? ` · Division ${rating.rank.division}` : ''} · ${rating.games < rating.rank.placementTotal ? `${rating.games}/${rating.rank.placementTotal} placements` : `${rating.mu.toFixed(0)} MMR`}`;
       progress.append(badge, text);
     }
     for (const button of panel.querySelectorAll('[data-size]')) button.setAttribute('aria-pressed', String(Number(button.dataset.size) === size));
@@ -148,7 +148,11 @@ export function mountOnline(root, hooks) {
     if (state === 'server_unavailable' || state === 'update_required') { searching = false; preparing = false; show(); controls(); }
   }
   async function onMessage(message) {
-    if (message.type === 'connected' && searching && !queueSent) {
+    if (message.type === 'connected' && !searching && storage.get('match')) {
+      storage.set('match', null); transport.inMatch = false;
+      setStatus('The previous match is no longer available on this server. Interrupted server matches are no-contest; completed results remain in account history.');
+      show(); controls();
+    } else if (message.type === 'connected' && searching && !queueSent) {
       queueSent = true;
       transport.send({ type: 'queue', mode, size, region: message.region, visual: hooks.visual(), request });
     } else if (message.type === 'searching') setStatus(`Searching for ${message.size}v${message.size} players in ${message.region}. Cancel at any time.`);
@@ -240,7 +244,8 @@ export function mountOnline(root, hooks) {
     else if (action === 'bots') { leave(); hide(); hooks.bots(); }
     else if (action === 'again') { leave(); lastResult = null; find('.online-results').hidden = true; await open(mode, size); await search(); }
     else if (action === 'signout') {
-      try { if (session) await api('/logout', { body: {}, token: session.token }); const client = await accountClient(config); await client.auth.signOut(); }
+      try { if (session) await api('/logout', { body: {}, token: session.token }); } catch {}
+      try { const client = await accountClient(config); const { error } = await client.auth.signOut({ scope: 'local' }); if (error) throw error; }
       catch (error) { setStatus(error.message); }
       finally { leave(); session = authSession = profile = null; storage.set('session', null); input.disabled = false; controls(); }
     }

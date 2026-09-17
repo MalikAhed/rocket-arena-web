@@ -14,8 +14,10 @@ export function mountHome(root, actions) {
     <section class="arena-play" data-home-page="play" hidden aria-label="Choose a game mode">
       <h1 class="arena-play__title">PLAY</h1>
       <div class="arena-play__grid">
-        <button class="arena-mode" type="button" data-home="match"><img src="/assets/menu/casual-original.webp" alt="" draggable="false"><span><strong>CASUAL</strong><small>1v1 vs AI · Choose your opponent</small></span></button>
-        <button class="arena-mode" type="button" data-home="freeplay"><img src="/assets/menu/freeplay-original.webp" alt="" draggable="false"><span><strong>FREE PLAY</strong><small>Solo practice · No timer, no opponent</small></span></button>
+        <button class="arena-mode" type="button" data-home="casual"><img src="/assets/menu/casual-original.webp" alt="" draggable="false"><span><strong>CASUAL</strong><small>Online · 1v1, 2v2, 3v3</small></span></button>
+        <button class="arena-mode" type="button" data-home="ranked"><img src="/assets/online/ranked.webp" alt="" draggable="false"><span><strong>RANKED</strong><small>Online · Account required</small></span></button>
+        <button class="arena-mode" type="button" data-home="match"><img src="/assets/online/bots.webp" alt="" draggable="false"><span><strong>BOTS</strong><small>Offline · Three AI difficulties</small></span></button>
+        <button class="arena-mode" type="button" data-home="freeplay"><img src="/assets/menu/freeplay-original.webp" alt="" draggable="false"><span><strong>FREE PLAY</strong><small>Offline · Solo practice</small></span></button>
       </div>
       <nav class="arena-play__actions" aria-label="Play menu actions"><button type="button" data-home="back">BACK</button></nav>
     </section>
