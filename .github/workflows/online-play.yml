@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install locked dependencies
+      - name: Install locked baseline dependencies
         run: npm ci
       - name: Verify protected assets
         run: npm run verify
@@ -35,11 +35,23 @@ jobs:
         run: npm run build
         env:
           ROCKET_ARENA_BASE_PATH: /rocket-arena-web
+      # One-time dependency/bootstrap audit. Replace with npm ci once the
+      # resolved lockfile has been inspected and committed on this branch.
+      - name: Resolve online dependencies for inspection
+        run: |
+          npm install --save-exact ws pg @supabase/supabase-js
+          npm install --save-dev --save-exact playwright wabt
+          npm audit --omit=dev --json > dependency-audit.json || true
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Capture baseline browser evidence
+        run: node tools/browser-baseline.mjs
       - name: Package reproducible inspection workspace
         if: always()
         run: |
           git ls-files > tracked-files.txt
-          tar -czf "$RUNNER_TEMP/rocket-inspection.tgz" src public tools node_modules package.json package-lock.json index.html README.md SOURCE.md VALIDATION.md asset-report.json tracked-files.txt
+          mkdir -p evidence
+          tar -czf "$RUNNER_TEMP/rocket-inspection.tgz" src public tools node_modules package.json package-lock.json index.html README.md SOURCE.md VALIDATION.md asset-report.json tracked-files.txt evidence dependency-audit.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
