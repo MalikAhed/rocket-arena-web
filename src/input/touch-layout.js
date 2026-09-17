@@ -61,23 +61,23 @@ const Of = {
   };
 
 const rb = [
-    ["ballCam", "cam", "Cam", "Toggle ball camera", !1],
-    ["reset", "reset", "Reset", "Reset shot", !1],
-    ["handbrake", "handbrake", "Slide", "Hold powerslide and air roll", !0],
-    ["boost", "boost", "Boost", "Hold boost", !0],
-    ["jump", "jump", "Jump", "Hold jump", !0],
-    ["airRollLeft", "roll", "Roll L", "Hold air roll left", !0],
-    ["airRollRight", "roll", "Roll R", "Hold air roll right", !0],
-    ["airRoll", "roll", "Roll", "Hold free air roll", !0],
+    ["ballCam", "cam", "View", "Toggle ball camera", !1, "◉"],
+    ["reset", "reset", "Reset", "Reset shot", !1, "↺"],
+    ["handbrake", "handbrake", "Drift", "Hold powerslide and air roll", !0, "⌁"],
+    ["boost", "boost", "Thrust", "Hold boost", !0, "↗"],
+    ["jump", "jump", "Lift", "Hold jump", !0, "↑"],
+    ["airRollLeft", "roll", "Roll left", "Hold air roll left", !0, "↶"],
+    ["airRollRight", "roll", "Roll right", "Hold air roll right", !0, "↷"],
+    ["airRoll", "roll", "Roll", "Hold free air roll", !0, "⟳"],
   ];
 
 function B0() {
   return `<div class="touch-ball-actions" data-touch-control="training" role="group" aria-label="Training controls">
     ${[
-      ["takePossession", "Possess", "Take possession"],
-      ["startDribble", "Dribble", "Start dribble"],
+      ["takePossession", "Claim", "Take possession"],
+      ["startDribble", "Carry", "Start dribble"],
       ["passBall", "Pass", "Pass ball"],
-      ["launchBall", "Launch", "Launch ball"],
+      ["launchBall", "Kick", "Launch ball"],
     ]
       .map(
         ([i, e, t]) =>
@@ -96,8 +96,9 @@ function B0() {
         t,
         n,
         r,
+        s,
       ]) => `<button class="touch-button touch-button--${e}" type="button"
-    data-touch-control="${i}" data-touch-${r ? "hold" : "tap"}="${i}" aria-label="${n}" ${r ? 'aria-pressed="false"' : ""}>${t}</button>`,
+    data-touch-control="${i}" data-touch-${r ? "hold" : "tap"}="${i}" aria-label="${n}" ${r ? 'aria-pressed="false"' : ""}><span class="touch-button__glyph" aria-hidden="true">${s}</span><span class="touch-button__label">${t}</span></button>`,
     )
     .join("")}`;
 }
@@ -119,24 +120,24 @@ function Lh(i) {
 
 function Fh(i, e) {
   const { width: t, height: n, left: r, right: s, top: a, bottom: o } = e,
-    A = Fa(Math.min(t, n) * 0.3, 120, 150),
+    A = Fa(Math.min(t, n) * 0.29, 124, 158),
     l = t - r - s,
     c = Math.min(232, l),
     h = {
-      drive: { left: r, top: n - o - A, width: A, height: A },
-      jump: { left: t - s - 66, top: n - o - 66, width: 66, height: 66 },
-      boost: { left: t - s - 130, top: n - o - 105, width: 62, height: 62 },
-      handbrake: { left: t - s - 50, top: n - o - 128, width: 50, height: 50 },
-      ballCam: { left: t - s - 148, top: n - o - 44, width: 44, height: 44 },
-      reset: { left: t - s - 142, top: n - o - 164, width: 44, height: 44 },
-      airRollLeft: { left: r, top: n - o - A - 92, width: 48, height: 48 },
+      drive: { left: r + 8, top: n - o - A - 8, width: A, height: A },
+      jump: { left: t - s - 76, top: n - o - 76, width: 76, height: 76 },
+      boost: { left: t - s - 146, top: n - o - 72, width: 64, height: 64 },
+      handbrake: { left: t - s - 70, top: n - o - 140, width: 58, height: 54 },
+      ballCam: { left: r + 10, top: n - o - A - 58, width: 54, height: 46 },
+      reset: { left: t - s - 134, top: n - o - 134, width: 50, height: 46 },
+      airRollLeft: { left: r + 8, top: n - o - A - 114, width: 50, height: 50 },
       airRollRight: {
-        left: r + 56,
-        top: n - o - A - 92,
-        width: 48,
-        height: 48,
+        left: r + 66,
+        top: n - o - A - 114,
+        width: 50,
+        height: 50,
       },
-      airRoll: { left: r + 112, top: n - o - A - 92, width: 48, height: 48 },
+      airRoll: { left: r + 124, top: n - o - A - 114, width: 50, height: 50 },
       training: {
         left: r + (l - c) / 2,
         top: a + (t > 640 ? 0 : 116),

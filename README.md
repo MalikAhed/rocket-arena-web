@@ -26,6 +26,7 @@ Local production check: `ROCKET_ARENA_DIST=1 PORT=4288 npm start` after building
 - Vehicle and impact effects use MP3. Engine grains and boost loops retain WAV to preserve their timing. Balanced rendering starts at 85% scale with a 60 FPS cap; quality remains configurable.
 - Bot models and the inference engine load when starting a bot match. They are retained because removing them would remove the existing opponent modes.
 - Garage thumbnails render at 256×144 and the selected car at 854×480. Switching cars redraws the selected preview; previews initialize sequentially, without an extra shader-compilation pass.
+- Mobile play uses an original “Field Console” interface with a squared Drive/Steer pad and geometric Lift, Thrust, Drift and View controls. It keeps the same gameplay bindings while using its own layout, HUD treatment, safe-area rules and touch language.
 
 The game retains solo practice and local AI matches. Hosting this edition makes it playable through a website; network multiplayer has not been added.
 

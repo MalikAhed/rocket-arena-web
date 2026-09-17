@@ -22,6 +22,7 @@ export class ArcadeBoostMeter {
     if (amount !== this.lastValue || infinite !== this.lastUnlimited) {
       this.figure.textContent = infinite ? "∞" : String(amount);
       this.fill.style.setProperty("--boost-sweep", `${amount * 2.25}deg`);
+      this.fill.style.setProperty("--boost-level", `${amount}%`);
       this.root.setAttribute("aria-valuenow", String(amount));
       this.root.classList.toggle("is-unlimited", infinite);
       this.root.classList.toggle("is-empty", amount === 0);

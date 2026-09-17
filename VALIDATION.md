@@ -10,6 +10,7 @@
 - All six garage cars loaded and equipped successfully. A separate browser model check confirmed nonempty four-wheel assemblies for every car.
 - A bot match started successfully.
 - Landscape mobile viewport (844×390) loaded with visible joystick and touch buttons.
+- The redesigned Field Console mobile layout passed a touch browser smoke test with all existing actions preserved, zero failed requests and zero uncaught exceptions.
 - Extended browser run: 338 responses, zero failed requests, zero uncaught JavaScript exceptions. Details: `browser-report.json`.
 - Screenshots: `gameplay-check.png`, `mobile-check.png`.
 - Local preview HTTP health check passed at http://localhost:4287/; development server supplies automatic reload.
