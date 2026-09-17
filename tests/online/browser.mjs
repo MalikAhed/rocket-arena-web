@@ -17,11 +17,17 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, timeout = 20000) { const start = performance.now(); while (!(await fn())) { if (performance.now() - start > timeout) throw Error('Browser condition timed out'); await delay(50); } }
 let browser, appClosed = false;
 const pages = [], errors = [], checks = [], measurements = [];
+// Six GPU-rendered clients share one software-rendering CI machine. Select
+// existing user settings only; do not redefine a preset or change game defaults.
+const testGraphics = { qualityPreset: 'potato', renderScale: 0.25, showStadium: false, limitFps: true, maxFps: 60 };
 try {
   await until(async () => { try { return (await fetch('http://127.0.0.1:4173')).ok; } catch { return false; } });
-  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling'] });
+  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] });
   async function newPlayer(name) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    await context.addInitScript(settings => {
+      localStorage.setItem('rocket-arena.local-graphics-presets.v1', JSON.stringify(settings));
+    }, testGraphics);
     const page = await context.newPage(); page.setDefaultTimeout(25000); pages.push(page);
     console.log('Opening independent browser:', name);
     page.on('pageerror', error => errors.push(String(error)));
@@ -76,6 +82,16 @@ try {
     await primary.page.keyboard.down('Space'); await delay(90); await primary.page.keyboard.up('Space');
     await delay(300);
     assert.notDeepEqual(room.arena.state.slice(22, 22 + size * 2 * 51), before);
+    // Server snapshots can announce playing before a GPU-delayed render. Verify
+    // actual prediction in each focused client rather than sampling that race.
+    for (const player of current) {
+      await player.page.bringToFront();
+      await player.page.waitForFunction(() => {
+        const s = window.rocketArenaOnline?.snapshot();
+        return s?.netcode?.protocol === 2 && s.netcode.simulatedTicks > 0;
+      }, null, { timeout: 30000 });
+    }
+    await primary.page.bringToFront();
     const networked = await Promise.all(current.map(p => p.page.evaluate(() => window.rocketArenaOnline.snapshot())));
     assert(networked.every(r => r.netcode?.protocol === 2 && r.netcode.simulatedTicks > 0));
     assert(networked.every(r => r.pendingInputs <= 60 && r.bufferedSnapshots <= 48 && r.netcode.maxReplayTicks <= 120));
@@ -181,12 +197,18 @@ try {
   assert.equal(backendRequests, 0); checks.push('Free Play and Bots start while backend is stopped, without game-server requests');
   assert.equal(errors.length, 0, errors.join('\n'));
 } catch (error) {
+  await writeFile(`${out}/failure-diagnostics.json`, JSON.stringify({
+    failure: String(error), server: app.metrics,
+    clients: await Promise.all(pages.map(async page => page.isClosed() ? null : page.evaluate(() => ({
+      hidden: document.hidden, focused: document.hasFocus(), online: window.rocketArenaOnline?.snapshot(),
+    })).catch(() => null))),
+  }, null, 2));
   for (const [index, page] of pages.entries()) if (!page.isClosed()) await page.screenshot({ path: `${out}/failure-${index}.png` }).catch(() => {});
   throw error;
 } finally {
   await writeFile(`${out}/report.json`, JSON.stringify({ checks, errors, measurements, node: process.version, platform: os.platform(), cpu: os.cpus()[0]?.model,
     browser: browser?.version(), renderer: 'Chromium headless SwiftShader on GitHub-hosted Linux; not a Chromebook benchmark',
-    synthetic: true, humanInternetPlayVerified: false, liveOAuthVerified: false }, null, 2));
+    testGraphics, synthetic: true, humanInternetPlayVerified: false, liveOAuthVerified: false }, null, 2));
   await browser?.close(); await proxy.close(); if (!appClosed) await app.close(); staticServer.kill('SIGTERM');
   if (staticServer.exitCode === null) await once(staticServer, 'exit');
 }
