@@ -217,7 +217,7 @@ export function mountOnline(root, hooks) {
     const attempt = generation; preparing = true; reservation = message; matchId = message.matchId;
     const order = [message.self, ...message.roster.map((_, i) => i).filter(i => i !== message.self)];
     try {
-      await hooks.prepare(message.roster, order, () => attempt === generation);
+      await hooks.prepare(message.roster, order, () => attempt === generation, message);
       if (attempt !== generation) return;
       prediction?.dispose(); prediction = new Prediction(hooks.sim, order); prediction.seq = message.ack;
       active = true; searching = false; root.classList.add('online-active'); hud.hidden = false;
@@ -228,7 +228,7 @@ export function mountOnline(root, hooks) {
       transport.send({ type: 'ready', matchId });
       hide(); hooks.resume();
     } catch (error) {
-      transport.send({ type: 'cancel', request }); leave(); show(); setStatus(`Could not load this match: ${error.message}`);
+      transport?.send({ type: 'cancel', request }); hooks.restore(); leave(); show(); setStatus(`Could not load this match: ${error.message}`);
     } finally { preparing = false; controls(); }
   }
   function onSnapshot(snapshot) {

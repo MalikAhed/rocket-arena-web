@@ -8,9 +8,9 @@ const distance = (a, b, at = L.CARS) => Math.hypot(...[0, 1, 2].map(i => a[at + 
 export function percentile(values, p) { if (!values.length)
     return 0; return [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * p))]; }
 function rng(seed) { return () => { seed = (1664525 * seed + 1013904223) >>> 0; return seed / 4294967296; }; }
-export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, jitter = 0, seconds = 12, size = 1, seed = 1717, streamFactory, input, stall = false, stallDuration = 150, downLoss = 0, opponents, setup, maintenanceHz = 0 } = {}) {
+export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, jitter = 0, seconds = 12, size = 1, seed = 1717, streamFactory, input, stall = false, stallDuration = 150, downLoss = 0, opponents, setup, maintenanceHz = 0, checkpoints = false } = {}) {
     const roster = Array.from({ length: size * 2 }, (_, i) => ({ team: i % 2, visual: 'fennec' }));
-    const server = await NativeArena.create(roster), local = await NativeArena.create(roster), random = rng(seed);
+    const server = await NativeArena.create(roster, {network:checkpoints}), local = await NativeArena.create(roster, {network:checkpoints}), random = rng(seed);
     (setup ?? placeCars)(server);
     (setup ?? placeCars)(local);
     const sim = { module: local.module, get state() { return local.state; }, setControls(i, c) { local.input(i, controlsArray(c)); }, step(t) { local.module._physics_step(t); } };
@@ -28,7 +28,7 @@ export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, 
         upLast = Math.max(upLast, 4000 + stallDuration + rtt / 2); up.push({ at: upLast, packet }); inputs++; return true; }
     function snapshot() { if (random() < downLoss)
         return; downLast = delivery(downLast); if (stall && now >= 4000 && now < 4000 + stallDuration)
-        downLast = Math.max(downLast, 4000 + stallDuration + rtt / 2); let meta = stream?.metadata?.(); const snap = decodeSnapshot(encodeSnapshot({ tick, epoch: 1, time: now, state: server.state, match, acknowledgements: Array(roster.length).fill(0).map((_, i) => i === 0 ? (meta?.seq ?? seq) : 0), inputStates: meta ? [meta, ...remoteStreams.map(s => s.metadata())] : undefined })); down.push({ at: downLast, snap }); }
+        downLast = Math.max(downLast, 4000 + stallDuration + rtt / 2); let meta = stream?.metadata?.(); const snap = decodeSnapshot(encodeSnapshot({ tick, epoch: 1, time: now, state: server.state, checkpoint:checkpoints ? server.checkpoint : undefined, match, acknowledgements: Array(roster.length).fill(0).map((_, i) => i === 0 ? (meta?.seq ?? seq) : 0), inputStates: meta ? [meta, ...remoteStreams.map(s => s.metadata())] : undefined })); down.push({ at: downLast, snap }); }
     snapshot();
     const getControls = input ?? drive;
     try {

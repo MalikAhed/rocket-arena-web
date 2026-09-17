@@ -1,3 +1,4 @@
+import { NETWORK_CORE_SHA256 } from '../src/physics/network-core.js';
 import { InputStream } from './input-stream.mjs';
 import { randomUUID } from 'node:crypto';
 import { NativeArena } from './native.mjs';
@@ -35,7 +36,7 @@ export class Room {
     const slot = this.slots.findIndex(p => p.id === id);
     if (slot < 0 || !this.arena) return;
     this.send(id, { type: 'reserved', matchId: this.id, mode: this.mode, size: this.size, region: this.region, private: this.private,
-      protocol: PROTOCOL, physics: PHYSICS_SHA256, roster: this.publicRoster(), configs: this.arena.configs,
+      protocol: PROTOCOL, physics: PHYSICS_SHA256, nativeCheckpoint: this.peerFor(id)?.nativeCheckpoint ? 1 : 0, nativePhysics: this.peerFor(id)?.nativeCheckpoint ? NETWORK_CORE_SHA256 : undefined, roster: this.publicRoster(), configs: this.arena.configs,
       self: slot, ack: this.slots[slot].ack, graceMs: this.config.graceMs, reconnect: this.active || this.terminal });
     this.sendSnapshot(id);
     if (this.result) this.send(id, { type: 'result', ...this.result });
@@ -152,11 +153,18 @@ export class Room {
   }
   sendSnapshot(id) {
     if (!this.arena) return;
-    const binary = encodeSnapshot({ tick: this.tick, epoch: this.epoch, time: performance.now(), state: this.arena.state, match: this.match.state, acknowledgements: this.slots.map(s => s.ack), inputStates: this.slots.map(s => s.stream.metadata()) });
-    if (id) this.peerFor(id)?.sendBinary(binary);
-    else for (const player of this.players) this.peerFor(player.id)?.sendBinary(binary);
-    this.lastSnapshotBytes = binary.byteLength;
+    const values = { tick: this.tick, epoch: this.epoch, time: performance.now(), state: this.arena.state, match: this.match.state,
+      acknowledgements: this.slots.map(s => s.ack), inputStates: this.slots.map(s => s.stream.metadata()) };
+    let legacy, extended;
+    for (const player of id ? [{ id }] : this.players) {
+      const peer = this.peerFor(player.id); if (!peer) continue;
+      const binary = peer.nativeCheckpoint
+        ? (extended ??= encodeSnapshot({ ...values, checkpoint: this.arena.checkpoint }))
+        : (legacy ??= encodeSnapshot(values));
+      peer.sendBinary(binary); this.lastSnapshotBytes = binary.byteLength;
+    }
   }
+
   finish(winner, reason) {
     if (this.terminal || ![0, 1].includes(winner)) return;
     this.terminal = true; this.match.state.phase = 'ended'; this.match.state.winner = winner;

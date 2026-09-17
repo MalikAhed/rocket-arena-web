@@ -1145,15 +1145,16 @@ async function startGame() {
     modal: open => { ne = open; qe("online", open); },
     resume: () => st(), home: () => home.show(), closeHome: () => home.close(),
     bots: () => { ne = true; pe.show(); },
-    prepare: async (roster, order, valid) => {
+    prepare: async (roster, order, valid, descriptor) => {
       goalPresentation?.finish({ cancel: true }); v(); p = false;
       const ordered = order.map(index => roster[index]);
       await N.prepareOnlineRoster(ordered);
       if (!valid()) { while (N.cars.length > 1) N.removeOpponent(); return; }
-      n.configureOnline(ordered); syncNativeGeometry(); a.start(); a.state.phase = "waiting";
+      await n.prepareOnline(ordered, descriptor, valid); syncNativeGeometry(); a.start(); a.state.phase = "waiting";
       n.setGoalExplosionEnabled(false); s.sync(); n.resetView();
     },
     restore: () => {
+      n.releaseOnline();
       while (N.cars.length > 1) N.removeOpponent();
       N.cars[0].userData.garageTeam = e; N.applyGarageCustomization(i);
       pe.options.onLeave();

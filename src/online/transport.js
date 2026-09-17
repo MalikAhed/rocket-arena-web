@@ -10,7 +10,7 @@ export class Transport {
     this.onState(this.retryStart ? 'reconnecting' : 'connecting');
     const socket = this.socket = new WebSocket(this.url); socket.binaryType = 'arraybuffer';
     const timeout = this.connectTimeout = setTimeout(() => { if (!this.connected) socket.close(); }, 10000);
-    socket.onopen = () => { if (this.socket === socket && !this.stopped) this.send({ type: 'hello', protocol: PROTOCOL, physics: PHYSICS_SHA256, token: this.token }); };
+    socket.onopen = () => { if (this.socket === socket && !this.stopped) this.send({ type: 'hello', protocol: PROTOCOL, physics: PHYSICS_SHA256, nativeCheckpoint: 1, token: this.token }); };
     socket.onmessage = event => {
       if (this.socket !== socket || this.stopped) return;
       this.lastReceived = performance.now();

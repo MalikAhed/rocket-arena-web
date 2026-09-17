@@ -36,10 +36,11 @@ export async function initializeSourcePhysics(cameraFactory, {
     return new Uint8Array(await response.arrayBuffer());
   },
   loadFactory = async () => (await import("/physics/rocketsim-core.js")).default,
+  expectedHash = SOURCE_CORE_SHA256,
   digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),v=>v.toString(16).padStart(2,"0")).join(""),
 } = {}) {
   const bytes = await fetchBytes();
-  if(await digest(bytes)!==SOURCE_CORE_SHA256) throw Error("RocketSim physics integrity check failed; Original is still available.");
+  if(await digest(bytes)!==expectedHash) throw Error("RocketSim physics integrity check failed; Original is still available.");
   const factory = await loadFactory();
   const core = await factory({ wasmBinary: bytes });
   if(core._physics_sourceVersion?.()!==1) throw Error("Unsupported RocketSim application ABI");

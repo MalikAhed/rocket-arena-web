@@ -1,3 +1,4 @@
+import { NETWORK_CORE_SHA256 } from './network-core.js';
 import { PHYSICS_PRESETS, resolvePhysicsSelection, resolveVisualHitboxFamily } from "./presets.js";
 import { initializeGameplayPhysics } from "./source-runtime.js";
 import { addConfiguredCar, readNativeCarConfig } from "./car-config.js";
@@ -28,8 +29,8 @@ class PhysicsSimulation {
       this.stateView
     );
   }
-  async init() {
-    this.module = await initializeGameplayPhysics(jC, this.physicsSelection);
+  async init(dependencies) {
+    this.module = await initializeGameplayPhysics(jC, this.physicsSelection, dependencies);
     const e = await (
         await fetch("/assets/arena/collision/manifest.json")
       ).json(),
@@ -91,6 +92,38 @@ class PhysicsSimulation {
       this.carConfigs.push(readNativeCarConfig(this.module, index));
     });
     this.setUnlimitedBoost(false); this.resetKickoff(); this.resetView();
+  }
+  async prepareOnline(roster, descriptor, canCommit = () => true) {
+    if (!descriptor?.nativeCheckpoint) { this.configureOnline(roster); return; }
+    if (descriptor.nativeCheckpoint !== 1 || descriptor.nativePhysics !== NETWORK_CORE_SHA256) throw Error('Online physics version differs. Reload after both deployments are updated.');
+    if (this.physicsSelection.engine !== 'experimental') throw Error('Online requires the source physics engine.');
+    const candidate = new PhysicsSimulation(this.physicsSelection);
+    try {
+      await candidate.init({
+        expectedHash: NETWORK_CORE_SHA256,
+        fetchBytes: async () => {
+          const response = await fetch('/physics/rocketsim-network.wasm', { cache: 'no-cache' });
+          if (!response.ok) throw Error(`Online physics unavailable (HTTP ${response.status})`);
+          return new Uint8Array(await response.arrayBuffer());
+        },
+        loadFactory: async () => (await import('/physics/rocketsim-network.js')).default,
+      });
+      candidate.configureOnline(roster); candidate.setGoalExplosionEnabled(false);
+      if (candidate.module._physics_netStateVersion?.() !== 1 || !candidate.state.every(Number.isFinite)) throw Error('Invalid online physics checkpoint ABI');
+      if (!canCommit()) throw Error('Online load cancelled');
+      this.releaseOnline();
+      const backup = Object.fromEntries(Object.getOwnPropertyNames(candidate).map(key => [key, this[key]]));
+      // Existing clock/scene references retain this object and the unchanged camera ABI.
+      for (const key of Object.getOwnPropertyNames(candidate)) this[key] = candidate[key];
+      this.offlinePhysics = backup;
+    } catch (error) { candidate.module?._physics_destroy?.(); throw error; }
+  }
+  releaseOnline() {
+    if (!this.offlinePhysics) return;
+    const backup = this.offlinePhysics; this.offlinePhysics = null;
+    this.module._physics_destroy?.();
+    if (this.viewPtr) this.module._free(this.viewPtr);
+    for (const [key, value] of Object.entries(backup)) this[key] = value;
   }
   async switchPhysics(selection, kind, match, team, unlimited, canCommit = () => true) {
     const candidate = new PhysicsSimulation(selection);

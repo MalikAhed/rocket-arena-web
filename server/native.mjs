@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import coreFactory from '../public/physics/rocketsim-core.js';
+import networkFactory from '../public/physics/rocketsim-network.js';
+import { NETWORK_CORE_SHA256 } from '../src/physics/network-core.js';
 import { addConfiguredCar, readNativeCarConfig } from '../src/physics/car-config.js';
 import { PHYSICS_PRESETS, resolveVisualHitboxFamily } from '../src/physics/presets.js';
 import { STATE_LAYOUT } from '../src/physics/state-layout.js';
@@ -9,20 +11,21 @@ import { PHYSICS_SHA256, NEUTRAL, STATE_SIZE } from '../src/online/protocol.js';
 
 // Files are loaded once; each arena owns an isolated native heap. The very
 // same WASM, constructor presets and collision meshes are shipped to browsers.
-let resources;
-async function loadResources() {
-  const wasm = await readFile(new URL('../public/physics/rocketsim-core.wasm', import.meta.url));
-  if (createHash('sha256').update(wasm).digest('hex') !== PHYSICS_SHA256) throw new Error('Physics integrity check failed');
+const resources = new Map();
+async function loadResources(network) {
+  const wasm = await readFile(new URL(network ? '../public/physics/rocketsim-network.wasm' : '../public/physics/rocketsim-core.wasm', import.meta.url));
+  if (createHash('sha256').update(wasm).digest('hex') !== (network ? NETWORK_CORE_SHA256 : PHYSICS_SHA256)) throw new Error('Physics integrity check failed');
   const directory = new URL('../public/assets/arena/collision/', import.meta.url);
   const manifest = JSON.parse(await readFile(new URL('manifest.json', directory), 'utf8'));
   if (!Array.isArray(manifest) || manifest.length !== 16 || manifest.some(name => !/^mesh_\d+\.cmf$/.test(name))) throw new Error('Invalid collision manifest');
   return { wasm, meshes: await Promise.all(manifest.map(name => readFile(new URL(name, directory)))) };
 }
 export class NativeArena {
-  static async create(roster) {
+  static async create(roster, { network = true } = {}) {
     if (![2, 4, 6].includes(roster.length)) throw new Error('Expected two complete human teams');
-    const { wasm, meshes } = await (resources ??= loadResources());
-    const module = await coreFactory({ wasmBinary: wasm, print: () => {}, printErr: () => {} });
+    if (!resources.has(network)) resources.set(network, loadResources(network));
+    const { wasm, meshes } = await resources.get(network);
+    const module = await (network ? networkFactory : coreFactory)({ wasmBinary: wasm, print: () => {}, printErr: () => {} });
     if (module._physics_sourceVersion() !== 1) throw new Error('Unsupported native ABI');
     module._experimentalAddConfiguredCar = module._physics_addConfiguredCar;
     const data = module._malloc(meshes.reduce((sum, mesh) => sum + mesh.length, 0));
@@ -48,6 +51,10 @@ export class NativeArena {
     module._physics_setUnlimitedBoost(0); module._physics_setGoalExplosionEnabled?.(0);
   }
   get state() { return new Float32Array(this.module.HEAPF32.buffer, this.statePtr, STATE_SIZE); }
+  get checkpoint() {
+    const pointer = this.module._physics_captureNetState?.();
+    return pointer ? new Float32Array(this.module.HEAPF32.buffer, pointer, this.module._physics_getNetStateSize()) : null;
+  }
   get ballOnGround() { return this.module._physics_getBallOnGround() === 1; }
   get heapBytes() { return this.module.HEAPU8.byteLength; }
   input(slot, values = NEUTRAL) { this.module.HEAPF32.set(values, this.controlsPtr / 4 + slot * 8); }

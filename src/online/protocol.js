@@ -1,4 +1,5 @@
 // Browser/server contract. Only inputs travel client -> server; never poses/results.
+import { CHECKPOINT_TAG, checkpointSize, validCheckpoint } from './checkpoint.js';
 import { STATE_LAYOUT, CAR_STATE_STRIDE, ro } from '../physics/state-layout.js';
 export const PROTOCOL = 2;
 export const INPUT_META_BYTES = 40;
@@ -34,12 +35,14 @@ export function readMessage(raw) {
 }
 // Protocol v2: 40-byte header, per-player consumed command/partial ticks + inputs, active
 // native car states, then pads. Unused native slots are never transmitted.
-export function encodeSnapshot({ tick, epoch = 0, time = 0, state, match, acknowledgements, inputStates }) {
+export function encodeSnapshot({ tick, epoch = 0, time = 0, state, match, acknowledgements, inputStates, checkpoint }) {
     const cars = state[STATE_LAYOUT.NUM_CARS], pads = state[STATE_LAYOUT.NUM_PADS];
     if (!Number.isInteger(cars) || cars < 2 || cars > MAX_CARS || pads !== 34)
         throw new Error('invalid_native_layout');
     const prefix = STATE_LAYOUT.CARS + cars * CAR_STATE_STRIDE;
-    const buffer = new ArrayBuffer(40 + cars * INPUT_META_BYTES + (prefix + pads * 2) * 4);
+    const baseBytes = 40 + cars * INPUT_META_BYTES + (prefix + pads * 2) * 4;
+    if (checkpoint && !validCheckpoint(checkpoint, cars, pads)) throw new Error('invalid_checkpoint');
+    const buffer = new ArrayBuffer(baseBytes + (checkpoint ? 8 + checkpoint.byteLength : 0));
     const view = new DataView(buffer);
     view.setUint32(0, MAGIC, true);
     view.setUint16(4, PROTOCOL, true);
@@ -72,6 +75,11 @@ export function encodeSnapshot({ tick, epoch = 0, time = 0, state, match, acknow
         view.setFloat32(offset, state[index], true);
     for (let index = 0; index < pads * 2; index++, offset += 4)
         view.setFloat32(offset, state[ro + index], true);
+    if (checkpoint) {
+        view.setUint32(baseBytes, CHECKPOINT_TAG, true);
+        view.setUint32(baseBytes + 4, checkpoint.length, true);
+        for (let i = 0; i < checkpoint.length; i++) view.setFloat32(baseBytes + 8 + 4*i, checkpoint[i], true);
+    }
     return buffer;
 }
 export function decodeSnapshot(data) {
@@ -81,7 +89,9 @@ export function decodeSnapshot(data) {
         throw new Error('update_required');
     const cars = view.getUint8(6), pads = view.getUint8(7), phase = PHASES[view.getUint8(16)];
     const prefix = STATE_LAYOUT.CARS + cars * CAR_STATE_STRIDE;
-    if (cars < 2 || cars > MAX_CARS || pads !== 34 || !phase || view.byteLength !== 40 + cars * INPUT_META_BYTES + (prefix + pads * 2) * 4)
+    const baseBytes = 40 + cars * INPUT_META_BYTES + (prefix + pads * 2) * 4;
+    const extendedBytes = baseBytes + 8 + checkpointSize(cars, pads) * 4;
+    if (cars < 2 || cars > MAX_CARS || pads !== 34 || !phase || (view.byteLength !== baseBytes && view.byteLength !== extendedBytes))
         throw new Error('invalid_snapshot');
     if ([24, 28, 32].some(at => !Number.isFinite(view.getFloat32(at, true)) || view.getFloat32(at, true) < 0)
         || view.getUint8(17) > 1 || view.getUint8(18) > 2 || view.getUint8(19) > 2)
@@ -102,7 +112,14 @@ export function decodeSnapshot(data) {
         state[ro + i] = view.getFloat32(offset, true);
     if (!state.every(Number.isFinite) || state[STATE_LAYOUT.NUM_CARS] !== cars)
         throw new Error('invalid_snapshot');
-    return { tick: view.getUint32(8, true), time: view.getUint32(12, true), epoch: view.getUint32(36, true), acknowledgements, inputStates, state,
+    let checkpoint;
+    if (view.byteLength !== baseBytes) {
+        if (view.getUint32(baseBytes, true) !== CHECKPOINT_TAG || view.getUint32(baseBytes+4, true) !== checkpointSize(cars,pads)) throw Error('invalid_checkpoint');
+        checkpoint = new Float32Array(checkpointSize(cars,pads));
+        for (let i = 0; i < checkpoint.length; i++) checkpoint[i] = view.getFloat32(baseBytes+8+4*i,true);
+        if (!validCheckpoint(checkpoint,cars,pads)) throw Error('invalid_checkpoint');
+    }
+    return { checkpoint, tick: view.getUint32(8, true), time: view.getUint32(12, true), epoch: view.getUint32(36, true), acknowledgements, inputStates, state,
         match: { mode: 'match', phase, paused: false, blueScore: view.getUint16(20, true), orangeScore: view.getUint16(22, true),
             remainingSeconds: view.getFloat32(24, true), overtime: !!view.getUint8(17), overtimeSeconds: view.getFloat32(28, true),
             countdown: view.getFloat32(32, true), winner: view.getUint8(18) ? view.getUint8(18) - 1 : null,

@@ -94,6 +94,7 @@ try {
     await primary.page.bringToFront();
     const networked = await Promise.all(current.map(p => p.page.evaluate(() => window.rocketArenaOnline.snapshot())));
     assert(networked.every(r => r.netcode?.protocol === 2 && r.netcode.simulatedTicks > 0));
+    assert(networked.every(r => r.netcode.nativeCheckpoint === 1 && r.netcode.checkpointRestores > 0), 'negotiated native state must actually restore in every independent client');
     assert(networked.every(r => r.pendingInputs <= 60 && r.bufferedSnapshots <= 48 && r.netcode.maxReplayTicks <= 120));
     checks.push(`${size}v${size}: protocol-v2 prediction and bounded buffers through an 80ms RTT / 20ms jitter application-message proxy`);
     await primary.page.screenshot({ path: `${out}/gameplay-${size}v${size}.png` });

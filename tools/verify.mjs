@@ -5,13 +5,14 @@ import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { GARAGE_CARS, normalizeGarageCar } from '../src/settings/car-customization.js';
 import { MeshoptDecoder } from '../src/vendor/meshopt-decoder.js';
+import { NETWORK_CORE_SHA256 } from '../src/physics/network-core.js';
 import { SOURCE_CORE_SHA256, ORIGINAL_GAMEPLAY_CORE_SHA256 } from '../src/physics/source-runtime.js';
 const root = resolve(import.meta.dirname, '..');
 const publicDir = join(root, 'public');
 await MeshoptDecoder.ready;
 assert.deepEqual(GARAGE_CARS.map(c => c.id), ['fennec', 'octane-original', 'challenger', 'spectre', 'vesper', 'amethyst']);
 for (const id of ['tripo', 'vanguard', 'vanguard-original', 'crimson', 'volt']) assert.equal(normalizeGarageCar(id), 'fennec');
-for (const [name, expected] of [['original-launch.wasm', ORIGINAL_GAMEPLAY_CORE_SHA256], ['rocketsim-core.wasm', SOURCE_CORE_SHA256]]) {
+for (const [name, expected] of [['original-launch.wasm', ORIGINAL_GAMEPLAY_CORE_SHA256], ['rocketsim-core.wasm', SOURCE_CORE_SHA256], ['rocketsim-network.wasm', NETWORK_CORE_SHA256]]) {
   const bytes = await readFile(join(publicDir, 'physics', name));
   assert.equal(createHash('sha256').update(bytes).digest('hex'), expected);
   assert(WebAssembly.validate(bytes));

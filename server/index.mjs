@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { NETWORK_CORE_SHA256 } from '../src/physics/network-core.js';
 import { TimingWindow } from '../src/online/timing.js';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -44,7 +45,7 @@ export async function createGameServer(config = configuration(), dependencies = 
       if (request.method === 'GET' && ['/healthz', '/readyz'].includes(path)) {
         const ready = !lobby.stopping && !lobby.initializing && (!store || store.healthy);
         send(path === '/readyz' && !ready ? 503 : 200, { status: lobby.stopping ? 'draining' : lobby.initializing ? 'warming' : 'ok', ready, protocol: PROTOCOL,
-          physics: PHYSICS_SHA256, region: config.region, ranked: sessions.configured && !!store?.healthy,
+          physics: PHYSICS_SHA256, nativeCheckpoint: 1, nativePhysics: NETWORK_CORE_SHA256, region: config.region, ranked: sessions.configured && !!store?.healthy,
           rooms: lobby.rooms.size, capacity: config.maxRooms, beta: true, build: process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || 'local' }); return;
       }
       if (!originAllowed(origin)) throw new PublicError('origin_forbidden');
@@ -115,6 +116,7 @@ export async function createGameServer(config = configuration(), dependencies = 
           if (message.protocol !== PROTOCOL || message.physics !== PHYSICS_SHA256) throw new PublicError('update_required', 'Client and server versions differ. Reload after the client deployment is updated.');
           const session = sessions.get(message.token);
           if (!session) throw new PublicError('session_expired');
+          peer.nativeCheckpoint = message.nativeCheckpoint === 1;
           peer.authenticating = true;
           lobby.attach(session, peer); clearTimeout(timeout); return;
         }

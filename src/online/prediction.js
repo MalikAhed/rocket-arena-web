@@ -1,5 +1,6 @@
 import { STATE_LAYOUT as L, CAR_STATE as C, CAR_STATE_STRIDE as STRIDE } from '../physics/state-layout.js';
 import { controlsObject, NEUTRAL, reorderState, SIM_HZ, INPUT_HZ, CONTROL_KEYS } from './protocol.js';
+import { CHECKPOINT_HEADER, CHECKPOINT_CAR, hiddenStateAgrees } from './checkpoint.js';
 import { TimingWindow } from './timing.js';
 import { SnapshotBuffer } from './snapshot-buffer.js';
 import { copyConfirmedEvents } from './presentation-events.js';
@@ -12,13 +13,17 @@ export class Prediction {
     constructor(simulation, order) {
         this.sim = simulation;
         this.order = order;
-        this.pointer = simulation.module._malloc(24 * 4);
+        this.nativeCheckpoints = simulation.module._physics_netStateVersion?.() === 1;
+        this.checkpointLength = this.nativeCheckpoints ? simulation.module._physics_getNetStateSize() : 0;
+        this.pointer = simulation.module._malloc((this.nativeCheckpoints ? 510 + this.checkpointLength + order.length : 24) * 4);
+        this.checkpointRestores = 0;
         this.pending = [];
         // Reuse bounded state storage instead of allocating a 510-float snapshot
         // on every predicted AND replayed tick. One spare slot avoids aliasing.
         this.packetPool = Array.from({ length: MAX_PENDING + 1 }, () => ({ seq: 0,
             controls: [...NEUTRAL], object: controlsObject(NEUTRAL), ticks: 0, at: 0,
-            states: [simulation.state.slice(), simulation.state.slice()] }));
+            states: [simulation.state.slice(), simulation.state.slice()],
+            hidden: this.nativeCheckpoints ? [new Float32Array(CHECKPOINT_CAR), new Float32Array(CHECKPOINT_CAR)] : null }));
         this.packetCursor = 0; this.frameTiming = new TimingWindow(); this.updateTiming = new TimingWindow();
         this.beforeScratch = simulation.state.slice();
         this.ballScratch = simulation.state.slice();
@@ -51,8 +56,23 @@ export class Prediction {
         this.resynchronizations = 0;
         this.needsResync = false;
     }
-    restore(state, inputs) {
+    recordHidden(packet, tick) {
+        if (!this.nativeCheckpoints) return;
+        const pointer = this.sim.module._physics_captureNetState();
+        if (!pointer) throw Error('Online checkpoint capture failed');
+        packet.hidden[tick].set(new Float32Array(this.sim.module.HEAPF32.buffer, pointer + CHECKPOINT_HEADER * 4, CHECKPOINT_CAR));
+    }
+    restore(state, inputs, snapshot) {
         const m = this.sim.module, scratch = this.pointer / 4;
+        if (this.nativeCheckpoints && snapshot?.checkpoint) {
+            if (snapshot.checkpoint.length !== this.checkpointLength) throw Error('Checkpoint roster mismatch');
+            m.HEAPF32.set(snapshot.state, scratch);
+            m.HEAPF32.set(snapshot.checkpoint, scratch + 510);
+            m.HEAP32.set(this.order, scratch + 510 + this.checkpointLength);
+            if (m._physics_restoreNetState(this.pointer, this.pointer + 510 * 4, this.checkpointLength, this.pointer + (510 + this.checkpointLength) * 4) !== 1) throw Error('Online checkpoint restoration failed');
+            for (let slot=0;slot<this.order.length;slot++) this.sim.setControls(slot, controlsObject(inputs?.[this.order[slot]]?.controls ?? NEUTRAL));
+            this.checkpointRestores++; return;
+        }
         m.HEAPF32.set(state.subarray(L.BALL, L.BALL + 18), scratch);
         m._physics_setBallState(this.pointer);
         for (let slot = 0; slot < this.order.length; slot++) {
@@ -114,7 +134,10 @@ export class Prediction {
         const acknowledged = this.pending.find(p => p.seq === meta.seq);
         const historical = acknowledged && meta.ticks > 0 && meta.ticks <= acknowledged.ticks
             ? acknowledged.states[meta.ticks - 1] : null;
-        const agrees = !reset && !resync && playing && !meta.idle && this.agrees(historical, state);
+        const hidden = historical ? acknowledged?.hidden?.[meta.ticks - 1] : null;
+        const hiddenAgrees = !snapshot.checkpoint || this.nativeCheckpoints && hiddenStateAgrees(hidden, snapshot.checkpoint, self)
+          && historical && Math.abs(historical[L.CARS+C.BOOST]-state[L.CARS+C.BOOST]) < .1 && historical[L.CARS+C.IS_BOOSTING] === state[L.CARS+C.IS_BOOSTING];
+        const agrees = !reset && !resync && playing && !meta.idle && this.agrees(historical, state) && hiddenAgrees;
         this.seq = Math.max(this.seq, meta.seq);
         this.epoch = snapshot.epoch;
         if (reset || !playing) {
@@ -138,7 +161,7 @@ export class Prediction {
                 this.localVisual.reset();
                 this.ballVisual.reset();
             }
-            this.restore(state, snapshot.inputStates);
+            this.restore(state, snapshot.inputStates, snapshot);
             this.prev.set(this.sim.state);
             if (playing)
                 for (const packet of this.pending) {
@@ -147,7 +170,7 @@ export class Prediction {
                     for (let t = skip; t < packet.ticks && this.replayTicks < MAX_REPLAY_TICKS; t++) {
                         this.prev.set(this.sim.state);
                         this.sim.step(1);
-                        packet.states[t].set(this.sim.state);
+                        packet.states[t].set(this.sim.state); this.recordHidden(packet, t);
                         this.replayTicks++;
                     }
                 }
@@ -195,7 +218,7 @@ export class Prediction {
                 this.sim.setControls(0, packet.object);
                 this.prev.set(this.sim.state);
                 this.sim.step(1);
-                packet.states[packet.ticks++].set(this.sim.state);
+                packet.states[packet.ticks].set(this.sim.state); this.recordHidden(packet, packet.ticks++);
                 this.curr.set(this.sim.state);
                 this.simulatedTicks++;
             }
@@ -260,6 +283,6 @@ export class Prediction {
         this.averageQueue = 3;
         this.timeline.clear();
     }
-    metrics() { return { protocol: 2, frameTiming: this.frameTiming.summary(), predictionWork: this.updateTiming.summary(), historyBytes: this.packetPool.length * 2 * this.curr.byteLength, playbackRebases: this.timeline.rebases, playbackAgeMs: this.timeline.ageMs, resynchronizations: this.resynchronizations, predictionPaused: !this.wasPlaying, simulatedTicks: this.simulatedTicks, droppedTicks: this.droppedTicks, corrections: this.corrections, skippedRestores: this.skippedRestores, correctionUnits: this.error, visualOffsetUnits: Math.hypot(...this.localVisual.position), hardSnaps: this.localVisual.hardSnaps, jitterMs: this.timeline.jitterMs, interpolationMs: this.timeline.delayMs, interpolationUnderruns: this.timeline.underflows, inputQueueTicks: this.averageQueue, inputTimeScale: this.rate, maxReplayTicks: this.maxReplayTicks }; }
+    metrics() { return { protocol: 2, nativeCheckpoint: +this.nativeCheckpoints, checkpointRestores: this.checkpointRestores, hiddenHistoryBytes: this.nativeCheckpoints ? this.packetPool.length * 2 * CHECKPOINT_CAR * 4 : 0, frameTiming: this.frameTiming.summary(), predictionWork: this.updateTiming.summary(), historyBytes: this.packetPool.length * 2 * this.curr.byteLength, playbackRebases: this.timeline.rebases, playbackAgeMs: this.timeline.ageMs, resynchronizations: this.resynchronizations, predictionPaused: !this.wasPlaying, simulatedTicks: this.simulatedTicks, droppedTicks: this.droppedTicks, corrections: this.corrections, skippedRestores: this.skippedRestores, correctionUnits: this.error, visualOffsetUnits: Math.hypot(...this.localVisual.position), hardSnaps: this.localVisual.hardSnaps, jitterMs: this.timeline.jitterMs, interpolationMs: this.timeline.delayMs, interpolationUnderruns: this.timeline.underflows, inputQueueTicks: this.averageQueue, inputTimeScale: this.rate, maxReplayTicks: this.maxReplayTicks }; }
     dispose() { this.sim.module._free(this.pointer); this.pending.length = 0; this.timeline.clear(); this.latest = this.queuedSnapshot = null; this.packetPool.length = 0; }
 }
