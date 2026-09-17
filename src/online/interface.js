@@ -24,7 +24,7 @@ export function mountOnline(root, hooks) {
   let active = false, mode = 'casual', size = 1, request = 0, searching = false, generation = 0;
   let matchId = null, reservation = null, latestSnapshot = null, preparing = false, lastResult = null;
   let privateLobby = null, intent = 'queue', invite = '', connectAbort;
-  let lastNetworkDisplay = 0, networkRtt = null;
+  let lastNetworkDisplay = 0, networkRtt = null, serverTiming = null;
   let lastSnapshotAt = 0, queueSent = false, poll = 0, oldButtons = [], lastDirection = 0;
   const panel = document.createElement('section'); panel.className = 'online-panel sheet-overlay'; panel.hidden = true;
   panel.innerHTML = `<div class="online-dialog" role="dialog" aria-modal="true" aria-labelledby="online-title">
@@ -78,6 +78,7 @@ export function mountOnline(root, hooks) {
     submit.disabled = !config?.serverUrl || preparing;
     find('[data-online="cancel"]').hidden = !(searching || preparing) || !!privateLobby;
     find('[data-online="signin"]').hidden = !!authSession || active || searching || preparing || !!privateLobby;
+    find('[data-online="signin"]').disabled = !config?.supabaseUrl || !config?.publishableKey;
     find('[data-online="signout"]').hidden = !authSession || active || searching || preparing || !!privateLobby;
     find('[data-online="again"]').hidden = !lastResult;
     find('.online-playlists').hidden = active || !!lastResult || !!privateLobby;
@@ -137,7 +138,7 @@ export function mountOnline(root, hooks) {
     session = await api('/session', { body: { name }, accessToken: authSession?.access_token,
       token: session?.serverUrl === config.serverUrl ? session.token : undefined });
     session.serverUrl = config.serverUrl; storage.set('session', session);
-    if (session.profile) profile = session.profile;
+    profile = session.profile ?? null;
     return session;
   }
   async function open(nextMode, nextSize = 1) {
@@ -145,9 +146,10 @@ export function mountOnline(root, hooks) {
     setStatus('Checking online configuration…'); controls();
     try {
       await loadConfig();
-      if (config.supabaseUrl && config.publishableKey) authSession = await currentAccount(config);
+      authSession = config.supabaseUrl && config.publishableKey ? await currentAccount(config) : null;
+      if (!authSession) profile = null;
       if (authSession && config.serverUrl) { await establishSession(); input.value = profile.name; }
-      setStatus(!config.serverUrl ? 'Online play is not configured for this build. Bots and Free Play still work offline.' : mode === 'ranked' && !authSession ? friendly.sign_in_required : 'Choose a playlist, then find a match. Matches start only when every human player is ready.');
+      setStatus(!config.serverUrl ? 'Online play is not configured for this build. Bots and Free Play still work offline.' : mode === 'ranked' && !authSession ? (!config.supabaseUrl || !config.publishableKey ? 'Sign in unavailable: the account provider is not configured. Ranked cannot start; Casual and offline modes remain available.' : friendly.sign_in_required) : 'Choose a playlist, then find a match. Matches start only when every human player is ready.');
     } catch (error) { setStatus(error.message); }
     controls();
   }
@@ -206,7 +208,7 @@ export function mountOnline(root, hooks) {
     else if (message.type === 'error') { searching = false; preparing = false; setStatus(message.message === message.code ? explain(message.code) : message.message); show(); controls(); }
     else if (message.type === 'afk_warning') hud.querySelector('.online-banner').textContent = `MOVE YOUR CAR · AFK removal in ${message.seconds}s`;
     else if (message.type === 'forfeit_vote') hud.querySelector('.online-banner').textContent = `FORFEIT VOTE · ${message.votes}/${message.required}`;
-    else if (message.type === 'pong') networkRtt = Math.max(0, Math.round(performance.now() - message.nonce));
+    else if (message.type === 'pong') { networkRtt = Math.max(0, Math.round(performance.now() - message.nonce)); serverTiming = message.serverTiming ?? null; }
     else if (['reconnect_expired', 'afk_removed'].includes(message.type)) { setStatus(explain(message.type)); show(); }
   }
   async function join(message) {
@@ -326,17 +328,17 @@ export function mountOnline(root, hooks) {
   }
   return { open, leave, restoreIntent, get active() { return active; }, get visible() { return !panel.hidden; },
     escape: back,
-    update(now, controls, clock) {
+    update(now, controls, clock, render = true) {
       if (!active || !prediction) return;
       const usable = transport?.connected && now - lastSnapshotAt < 1000;
-      prediction.update(now, document.hidden || !document.hasFocus() || !panel.hidden ? NEUTRAL : controlsArray(controls), (seq, values, metadata) => transport?.send({ type: 'input', matchId, seq, epoch: metadata.epoch, controls: values }), clock, usable);
+      prediction.update(now, document.hidden || !document.hasFocus() || !panel.hidden ? NEUTRAL : controlsArray(controls), (seq, values, metadata) => transport?.send({ type: 'input', matchId, seq, epoch: metadata.epoch, controls: values }), clock, usable, { render });
       hooks.match.state.paused = false;
-      if (now - lastNetworkDisplay > 500) {
+      if (render && now - lastNetworkDisplay > 500) {
         const stats = prediction.metrics();
         hud.querySelector('.online-network').textContent = transport?.connected
           ? stats.predictionPaused && latestSnapshot?.match.phase === 'playing'
             ? 'Waiting for server updates · prediction paused'
-            : `${reservation?.region ?? 'Server'} · ${networkRtt === null ? 'connected' : `${networkRtt} ms`} · jitter ${Math.round(stats.jitterMs)} ms`
+            : `${reservation?.region ?? 'Server'} · ${networkRtt === null ? 'connected' : `${networkRtt} ms`} · jitter ${Math.round(stats.jitterMs)} ms${stats.frameTiming.p95Ms > 50 ? ' · slow rendering' : ''}${serverTiming?.eventLoopDelay?.p95Ms > 25 ? ' · server delay' : ''}`
           : 'Connection lost · reconnecting';
         lastNetworkDisplay = now;
       }
@@ -345,6 +347,6 @@ export function mountOnline(root, hooks) {
       phase: latestSnapshot?.match.phase, self: reservation?.self, roster: reservation?.roster?.map(p => ({ ...p })),
       authoritative: latestSnapshot ? Array.from(latestSnapshot.state) : null, acknowledgements: latestSnapshot?.acknowledgements,
       inputSequence: prediction?.seq ?? 0, pendingInputs: prediction?.pending.length ?? 0, bufferedSnapshots: prediction?.samples.length ?? 0,
-      correctionUnits: prediction?.error ?? 0, netcode: prediction?.metrics() ?? null, result: lastResult }; },
+      correctionUnits: prediction?.error ?? 0, netcode: prediction?.metrics() ?? null, serverTiming, result: lastResult }; },
   };
 }

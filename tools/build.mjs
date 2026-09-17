@@ -24,6 +24,10 @@ await build({ absWorkingDir: root, stdin: { contents: css.map(p => `@import ${JS
   outfile: resolve(dist, 'app/game.css'), bundle: true, minify: true, external: ['/assets/*'], legalComments: 'linked' });
 html = html.replace('/src/game.js', '/app/game.js').replace(/\s*<link rel="stylesheet" href="\/src\/[^" ]+\.css" \/>/g, '');
 html = html.replace('</head>', '<link rel="stylesheet" href="/app/game.css" /></head>');
+const release = process.env.GITHUB_SHA || process.env.RENDER_GIT_COMMIT;
+if (release && /^[a-f0-9]{40}$/.test(release)) {
+  html = html.replace('/app/game.js', `/app/game.js?v=${release}`).replace('/app/game.css', `/app/game.css?v=${release}`);
+}
 await mkdir(resolve(dist, 'src'), { recursive: true });
 await cp(resolve(root, 'src/rocket-arena.webmanifest'), resolve(dist, 'src/rocket-arena.webmanifest'));
 await writeFile(resolve(dist, 'index.html'), html);

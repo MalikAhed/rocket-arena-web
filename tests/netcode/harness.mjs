@@ -8,7 +8,7 @@ const distance = (a, b, at = L.CARS) => Math.hypot(...[0, 1, 2].map(i => a[at + 
 export function percentile(values, p) { if (!values.length)
     return 0; return [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * p))]; }
 function rng(seed) { return () => { seed = (1664525 * seed + 1013904223) >>> 0; return seed / 4294967296; }; }
-export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, jitter = 0, seconds = 12, size = 1, seed = 1717, streamFactory, input, stall = false, stallDuration = 150, downLoss = 0, opponents, setup } = {}) {
+export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, jitter = 0, seconds = 12, size = 1, seed = 1717, streamFactory, input, stall = false, stallDuration = 150, downLoss = 0, opponents, setup, maintenanceHz = 0 } = {}) {
     const roster = Array.from({ length: size * 2 }, (_, i) => ({ team: i % 2, visual: 'fennec' }));
     const server = await NativeArena.create(roster), local = await NativeArena.create(roster), random = rng(seed);
     (setup ?? placeCars)(server);
@@ -20,7 +20,7 @@ export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, 
     const up = [], down = [], jumps = [], impulses = [], errors = [], deviations = [], frameGaps = [], trace = [];
     const stream = streamFactory?.();
     const remoteStreams = Array.from({ length: roster.length - 1 }, () => streamFactory?.());
-    let nextRemote = 0, remoteSeq = 0;
+    let nextRemote = 0, remoteSeq = 0, nextMaintenance = maintenanceHz ? 0 : Infinity;
     const observations = { maxHeight: 0, ballContacts: 0, worldContacts: 0, flips: 0, ballSpeed: 0 };
     let now = 0, nextFrame = 0, nextTick = 1000 / SIM_HZ, tick = 0, seq = 0, controls = [...NEUTRAL], lastInput = -Infinity, upLast = 0, downLast = 0, lastFrame = null, lastVisual = null, lastVelocity = null, queuedMax = 0, replayMax = 0, steps = 0, inputs = 0;
     function delivery(last) { return Math.max(last, now + rtt / 2 + (random() * 2 - 1) * jitter); }
@@ -33,7 +33,7 @@ export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, 
     const getControls = input ?? drive;
     try {
         while (now < seconds * 1000 - 1e-6) {
-            now = Math.min(nextTick, nextFrame, opponents ? nextRemote : Infinity, up[0]?.at ?? Infinity, down[0]?.at ?? Infinity);
+            now = Math.min(nextTick, nextFrame, nextMaintenance, opponents ? nextRemote : Infinity, up[0]?.at ?? Infinity, down[0]?.at ?? Infinity);
             if (opponents && nextRemote <= now + 1e-6) {
                 remoteSeq++;
                 for (let slot = 1; slot < roster.length; slot++) {
@@ -85,6 +85,10 @@ export async function scenario(Predictor, { name = 'drive', fps = 60, rtt = 80, 
                     jumps.push(distance(before, sim.state));
                     errors.push(prediction.error ?? 0);
                 }
+            }
+            if (nextMaintenance <= now + 1e-6) {
+                prediction.update(now, getControls(now), send, clock, true, { render: false });
+                nextMaintenance += 1000 / maintenanceHz;
             }
             if (nextFrame <= now + 1e-6) {
                 prediction.update(now, getControls(now), send, clock, true);

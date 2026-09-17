@@ -10,5 +10,5 @@ export function onlineConfiguration(env = process.env) {
     try { if (JSON.parse(Buffer.from(publishableKey.split('.')[1], 'base64url').toString()).role !== 'anon') throw Error('not_public'); }
     catch { throw Error('Only publishable/anon Supabase keys belong in the frontend'); }
   }
-  return { serverUrl, supabaseUrl, publishableKey };
+  return { serverUrl, supabaseUrl, publishableKey, protocol: 2, build: env.GITHUB_SHA || env.RENDER_GIT_COMMIT || 'local' };
 }

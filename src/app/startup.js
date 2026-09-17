@@ -1164,7 +1164,9 @@ async function startGame() {
   }
   home.show();
   void online.restoreIntent();
-  ((gt = new FrameScheduler(te.getContext(), wt, (W) => He.displayFrame(W))),
+  ((gt = new FrameScheduler(te.getContext(), wt, (W) => He.displayFrame(W), W => {
+      if (online?.active) { he(); online.update(W, ke, s, false); }
+    })),
     gt.setFpsLimit(We.limitFps ? We.maxFps : null),
     xe(),
     gt.start());

@@ -1,5 +1,6 @@
 import { STATE_LAYOUT as L, CAR_STATE as C, CAR_STATE_STRIDE as STRIDE } from '../physics/state-layout.js';
-import { controlsObject, NEUTRAL, reorderState, SIM_HZ, INPUT_HZ } from './protocol.js';
+import { controlsObject, NEUTRAL, reorderState, SIM_HZ, INPUT_HZ, CONTROL_KEYS } from './protocol.js';
+import { TimingWindow } from './timing.js';
 import { SnapshotBuffer } from './snapshot-buffer.js';
 import { copyConfirmedEvents } from './presentation-events.js';
 import { clamp, distance, interpolateBody, VisualCorrection } from './pose.js';
@@ -13,11 +14,20 @@ export class Prediction {
         this.order = order;
         this.pointer = simulation.module._malloc(24 * 4);
         this.pending = [];
+        // Reuse bounded state storage instead of allocating a 510-float snapshot
+        // on every predicted AND replayed tick. One spare slot avoids aliasing.
+        this.packetPool = Array.from({ length: MAX_PENDING + 1 }, () => ({ seq: 0,
+            controls: [...NEUTRAL], object: controlsObject(NEUTRAL), ticks: 0, at: 0,
+            states: [simulation.state.slice(), simulation.state.slice()] }));
+        this.packetCursor = 0; this.frameTiming = new TimingWindow(); this.updateTiming = new TimingWindow();
+        this.beforeScratch = simulation.state.slice();
+        this.ballScratch = simulation.state.slice();
+        this.frozenScratch = new Float32Array(STRIDE);
         this.latest = null;
         this.queuedSnapshot = null;
         this.epoch = -1;
         this.accumulator = 0;
-        this.last = null;
+        this.last = null; this.lastPresentation = null;
         this.seq = 0;
         this.timeline = new SnapshotBuffer();
         this.samples = this.timeline.samples;
@@ -101,7 +111,9 @@ export class Prediction {
         if (resync)
             this.resynchronizations++;
         const meta = snapshot.inputStates?.[self] ?? { seq: snapshot.acknowledgements[self], ticks: COMMAND_TICKS, queued: 0, idle: 0 };
-        const historical = this.pending.find(p => p.seq === meta.seq)?.states?.[meta.ticks - 1];
+        const acknowledged = this.pending.find(p => p.seq === meta.seq);
+        const historical = acknowledged && meta.ticks > 0 && meta.ticks <= acknowledged.ticks
+            ? acknowledged.states[meta.ticks - 1] : null;
         const agrees = !reset && !resync && playing && !meta.idle && this.agrees(historical, state);
         this.seq = Math.max(this.seq, meta.seq);
         this.epoch = snapshot.epoch;
@@ -119,7 +131,7 @@ export class Prediction {
             this.error = 0;
         }
         else {
-            const before = this.sim.state.slice();
+            const before = this.beforeScratch; before.set(this.sim.state);
             if (resync) {
                 before.set(this.rendered.subarray(L.CARS, L.CARS + 18), L.CARS);
                 before.set(this.rendered.subarray(L.BALL, L.BALL + 18), L.BALL);
@@ -131,11 +143,11 @@ export class Prediction {
             if (playing)
                 for (const packet of this.pending) {
                     const skip = packet.seq === meta.seq ? meta.ticks : 0;
-                    this.sim.setControls(0, controlsObject(packet.controls));
+                    this.sim.setControls(0, packet.object);
                     for (let t = skip; t < packet.ticks && this.replayTicks < MAX_REPLAY_TICKS; t++) {
                         this.prev.set(this.sim.state);
                         this.sim.step(1);
-                        packet.states[t] = this.sim.state.slice();
+                        packet.states[t].set(this.sim.state);
                         this.replayTicks++;
                     }
                 }
@@ -154,11 +166,12 @@ export class Prediction {
             this.rate += (target - this.rate) * .15;
         }
     }
-    update(now, controls, send, clock, connected) {
+    update(now, controls, send, clock, connected, { render = true } = {}) {
         if (!this.latest || !Number.isFinite(now))
             return;
         const elapsed = this.last === null ? 0 : Math.max(0, now - this.last);
         this.last = now;
+        const updateStarted = performance.now();
         this.reconcile();
         const playing = connected && now - this.lastReceive < 300 && this.latest.match.phase === 'playing';
         if (playing) {
@@ -169,16 +182,20 @@ export class Prediction {
             for (let tick = 0; tick < count; tick++) {
                 let packet = this.pending.at(-1);
                 if (!packet || packet.ticks === COMMAND_TICKS) {
-                    packet = { seq: ++this.seq, controls: [...controls], ticks: 0, at: now, states: [] };
+                    packet = this.packetPool[this.packetCursor++ % this.packetPool.length];
+                    packet.seq = ++this.seq; packet.ticks = 0; packet.at = now;
+                    for (let i = 0; i < 8; i++) packet.controls[i] = controls[i];
+                    // Keep the same object consumed by PhysicsSimulation.setControls.
+                    for (let i = 0; i < 8; i++) packet.object[CONTROL_KEYS[i]] = i < 5 ? controls[i] : !!controls[i];
                     this.pending.push(packet);
                     if (this.pending.length > MAX_PENDING)
                         this.pending.shift();
                     send(packet.seq, packet.controls, { epoch: this.epoch });
                 }
-                this.sim.setControls(0, controlsObject(packet.controls));
+                this.sim.setControls(0, packet.object);
                 this.prev.set(this.sim.state);
                 this.sim.step(1);
-                packet.states[packet.ticks++] = this.sim.state.slice();
+                packet.states[packet.ticks++].set(this.sim.state);
                 this.curr.set(this.sim.state);
                 this.simulatedTicks++;
             }
@@ -187,7 +204,15 @@ export class Prediction {
             this.accumulator = 0;
             this.sim.setControls(0, controlsObject(NEUTRAL));
         }
-        const frozenLocal = !playing && this.latest.match.phase === 'playing' ? this.rendered.slice(L.CARS, L.CARS + STRIDE) : null;
+        if (!render) {
+            this.updateTiming.add(performance.now() - updateStarted);
+            return;
+        }
+        const renderElapsed = this.lastPresentation === null ? 0 : Math.max(0, now - this.lastPresentation);
+        this.lastPresentation = now;
+        if (renderElapsed) this.frameTiming.add(renderElapsed);
+        const frozenLocal = !playing && this.latest.match.phase === 'playing';
+        if (frozenLocal) this.frozenScratch.set(this.rendered.subarray(L.CARS, L.CARS + STRIDE));
         if (!this.timeline.render(now, this.rendered))
             return;
         if (playing) {
@@ -195,21 +220,21 @@ export class Prediction {
             // Predicted movement/boost/jump/wheels share a timeline; event counters are confirmed below.
             this.rendered.set(this.curr.subarray(L.CARS, L.CARS + STRIDE), L.CARS);
             interpolateBody(this.rendered, this.prev, this.curr, L.CARS, alpha, DT / 1000, false);
-            this.localVisual.apply(this.rendered, elapsed / 1000);
+            this.localVisual.apply(this.rendered, renderElapsed / 1000);
             // Predict nearby ball contact with the same simulation as the local car.
             // Far-away ball remains on the stable snapshot timeline; crossfade avoids a jump.
             const separation = Math.hypot(...[0, 1, 2].map(i => this.curr[L.CARS + i] - this.curr[L.BALL + i]));
             const target = clamp((900 - separation) / 400, 0, 1);
-            this.ballWeight += (target - this.ballWeight) * (1 - Math.exp(-Math.min(elapsed, 100) / 65));
-            const ball = this.curr.slice();
+            this.ballWeight += (target - this.ballWeight) * (1 - Math.exp(-Math.min(renderElapsed, 100) / 65));
+            const ball = this.ballScratch; ball.set(this.curr);
             interpolateBody(ball, this.prev, this.curr, L.BALL, alpha, DT / 1000, false);
-            this.ballVisual.apply(ball, elapsed / 1000);
+            this.ballVisual.apply(ball, renderElapsed / 1000);
             interpolateBody(this.rendered, this.rendered, ball, L.BALL, this.ballWeight, 0, false);
         }
         else if (frozenLocal) {
             // Hold the last rendered local pose during a genuine update gap. Do not
             // jump backwards onto the delayed remote timeline when prediction pauses.
-            this.rendered.set(frozenLocal, L.CARS);
+            this.rendered.set(this.frozenScratch, L.CARS);
         }
         else {
             this.localVisual.reset();
@@ -224,6 +249,7 @@ export class Prediction {
         clock.lastTicks = 0;
         clock.lastDropped = 0;
         clock.tick = this.latest.tick;
+        this.updateTiming.add(performance.now() - updateStarted);
     }
     resetConnection(ack) {
         this.seq = Math.max(this.seq, ack);
@@ -234,6 +260,6 @@ export class Prediction {
         this.averageQueue = 3;
         this.timeline.clear();
     }
-    metrics() { return { protocol: 2, resynchronizations: this.resynchronizations, predictionPaused: !this.wasPlaying, simulatedTicks: this.simulatedTicks, droppedTicks: this.droppedTicks, corrections: this.corrections, skippedRestores: this.skippedRestores, correctionUnits: this.error, visualOffsetUnits: Math.hypot(...this.localVisual.position), hardSnaps: this.localVisual.hardSnaps, jitterMs: this.timeline.jitterMs, interpolationMs: this.timeline.delayMs, interpolationUnderruns: this.timeline.underflows, inputQueueTicks: this.averageQueue, inputTimeScale: this.rate, maxReplayTicks: this.maxReplayTicks }; }
-    dispose() { this.sim.module._free(this.pointer); this.pending.length = 0; this.timeline.clear(); this.latest = this.queuedSnapshot = null; }
+    metrics() { return { protocol: 2, frameTiming: this.frameTiming.summary(), predictionWork: this.updateTiming.summary(), historyBytes: this.packetPool.length * 2 * this.curr.byteLength, playbackRebases: this.timeline.rebases, playbackAgeMs: this.timeline.ageMs, resynchronizations: this.resynchronizations, predictionPaused: !this.wasPlaying, simulatedTicks: this.simulatedTicks, droppedTicks: this.droppedTicks, corrections: this.corrections, skippedRestores: this.skippedRestores, correctionUnits: this.error, visualOffsetUnits: Math.hypot(...this.localVisual.position), hardSnaps: this.localVisual.hardSnaps, jitterMs: this.timeline.jitterMs, interpolationMs: this.timeline.delayMs, interpolationUnderruns: this.timeline.underflows, inputQueueTicks: this.averageQueue, inputTimeScale: this.rate, maxReplayTicks: this.maxReplayTicks }; }
+    dispose() { this.sim.module._free(this.pointer); this.pending.length = 0; this.timeline.clear(); this.latest = this.queuedSnapshot = null; this.packetPool.length = 0; }
 }

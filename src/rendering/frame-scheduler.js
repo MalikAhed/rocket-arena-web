@@ -2,7 +2,8 @@ import { _ } from "../core/class-fields.js";
 
 // Schedules rendering around GPU completion fences and the selected frame cap.
 class FrameScheduler {
-  constructor(e, t, n) {
+  constructor(e, t, n, maintain = null) {
+    this.maintain = maintain; this.lastMaintenance = 0;
     _(this, "channel", new MessageChannel());
     _(this, "pending", []);
     _(this, "gl");
@@ -60,6 +61,11 @@ class FrameScheduler {
             new Error("Could not check completion of a rendered frame.")
           );
         t.deleteSync(this.pending.shift());
+      }
+      if (this.pending.length >= 2 && this.maintain && e - this.lastMaintenance >= 1000 / 120) {
+        // GPU completion must not starve online input/physics. This optional
+        // callback does not draw, change a preset, or run offline networking.
+        this.lastMaintenance = e; this.maintain(e);
       }
       if (this.pending.length < 2) {
         if (this.frameInterval > 0) {

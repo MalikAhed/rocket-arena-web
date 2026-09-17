@@ -20,6 +20,9 @@ export function configuration(env = process.env) {
     if ([...url.searchParams.keys()].some(key => key.toLowerCase().startsWith('ssl'))) throw new Error('Configure TLS with DATABASE_SSL/DATABASE_CA_FILE, not URL options that override certificate validation');
     if (url.port === '6543') throw new Error('Use a direct or SESSION pooler connection, not transaction mode on port 6543');
   }
+  // Malik explicitly approved publishing the online build at this Pages origin.
+  // Keep the origin exact; other GitHub users and all wildcard origins stay denied.
+  if (production && !origins.includes('https://malikahed.github.io')) origins.push('https://malikahed.github.io');
   const rating = validateRatingConfig(env.RATING_CONFIG_FILE ? JSON.parse(readFileSync(env.RATING_CONFIG_FILE, 'utf8')) : DEFAULT_RATING_CONFIG);
   return { production, serverId: randomUUID(), host: env.HOST ?? '0.0.0.0', port: number(env, 'PORT', 8080, 0, 65535), origins,
     region: env.REGION ?? 'local', maxRooms: number(env, 'MAX_ROOMS', 2, 1, 8), maxConnections: number(env, 'MAX_CONNECTIONS', 48, 2, 256),

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { TimingWindow } from '../src/online/timing.js';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { configuration } from './config.mjs';
@@ -24,6 +25,8 @@ export async function createGameServer(config = configuration(), dependencies = 
   lobby.initializing = !!store && !dependencies.store;
   const rates = new BoundedRates(), peers = new Set();
   const metrics = { ticks: 0, stalls: 0, maxStepMs: 0, sentBytes: 0, skippedSnapshots: 0, started: Date.now() };
+  const stepTiming = new TimingWindow(), eventLoopTiming = new TimingWindow();
+  let timingReport = {};
   const originAllowed = origin => config.origins.includes(origin);
   const server = http.createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -42,7 +45,7 @@ export async function createGameServer(config = configuration(), dependencies = 
         const ready = !lobby.stopping && !lobby.initializing && (!store || store.healthy);
         send(path === '/readyz' && !ready ? 503 : 200, { status: lobby.stopping ? 'draining' : lobby.initializing ? 'warming' : 'ok', ready, protocol: PROTOCOL,
           physics: PHYSICS_SHA256, region: config.region, ranked: sessions.configured && !!store?.healthy,
-          rooms: lobby.rooms.size, capacity: config.maxRooms, beta: true }); return;
+          rooms: lobby.rooms.size, capacity: config.maxRooms, beta: true, build: process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || 'local' }); return;
       }
       if (!originAllowed(origin)) throw new PublicError('origin_forbidden');
       if (lobby.initializing) throw new PublicError('server_warming', 'The replacement server is warming up. No new matches can start yet.');
@@ -125,7 +128,7 @@ export async function createGameServer(config = configuration(), dependencies = 
         else if (message.type === 'ready') await lobby.roomFor(peer.session, message.matchId).markReady(peer.session.id);
         else if (message.type === 'leave') lobby.leave(peer.session);
         else if (message.type === 'forfeit') lobby.roomFor(peer.session, message.matchId).forfeit(peer.session.id);
-        else if (message.type === 'ping') peer.send({ type: 'pong', nonce: message.nonce, rtt: peer.rtt ?? null });
+        else if (message.type === 'ping') peer.send({ type: 'pong', nonce: message.nonce, rtt: peer.rtt ?? null, serverTiming: timingReport });
         else throw new PublicError('invalid_message');
       } catch (error) {
         const safe = publicError(error); peer.send(safe);
@@ -136,14 +139,17 @@ export async function createGameServer(config = configuration(), dependencies = 
   let previous = performance.now(), accumulator = 0, lastHousekeeping = previous, lastHeartbeat = previous;
   const timer = setInterval(() => {
     const now = performance.now(), elapsed = now - previous; previous = now;
+    eventLoopTiming.add(Math.max(0, elapsed - 4));
     // Confirmed server stalls are infrastructure failures, never player cheating.
     if (elapsed > 2000) { metrics.stalls++; for (const room of lobby.rooms.values()) if (!room.terminal) room.cancel('server_overloaded'); accumulator = 0; }
     else accumulator += elapsed;
     const start = performance.now();
     let count = 0;
-    while (accumulator >= 1000 / SIM_HZ && count++ < 24) { lobby.step(now); accumulator -= 1000 / SIM_HZ; metrics.ticks++; }
+    while (accumulator >= 1000 / SIM_HZ && count++ < 24) { lobby.step(now, true); accumulator -= 1000 / SIM_HZ; metrics.ticks++; }
+    lobby.flushSnapshots();
     if (accumulator > 2000) { lobby.shutdown('server_overloaded'); accumulator = 0; }
-    metrics.maxStepMs = Math.max(metrics.maxStepMs, performance.now() - start);
+    const stepMs = performance.now() - start; stepTiming.add(stepMs);
+    metrics.maxStepMs = Math.max(metrics.maxStepMs, stepMs);
     if (now - lastHousekeeping >= 250) { lobby.update(now); lobby.matchmake(now); lastHousekeeping = now; }
     if (now - lastHeartbeat >= 5000) {
       for (const peer of peers) {
@@ -151,6 +157,7 @@ export async function createGameServer(config = configuration(), dependencies = 
         else if (peer.ws.readyState === WebSocket.OPEN) { peer.pingAt = now; peer.ws.ping(); }
       }
       sessions.sweep(); rates.sweep(); lastHeartbeat = now;
+      timingReport = { tickBatch: stepTiming.summary(), eventLoopDelay: eventLoopTiming.summary(), targetHz: SIM_HZ, skippedSnapshots: metrics.skippedSnapshots };
     }
   }, 4);
   const readiness = store ? setInterval(() => { void store.ready(); }, 15000) : null;

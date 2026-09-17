@@ -83,6 +83,9 @@ export function decodeSnapshot(data) {
     const prefix = STATE_LAYOUT.CARS + cars * CAR_STATE_STRIDE;
     if (cars < 2 || cars > MAX_CARS || pads !== 34 || !phase || view.byteLength !== 40 + cars * INPUT_META_BYTES + (prefix + pads * 2) * 4)
         throw new Error('invalid_snapshot');
+    if ([24, 28, 32].some(at => !Number.isFinite(view.getFloat32(at, true)) || view.getFloat32(at, true) < 0)
+        || view.getUint8(17) > 1 || view.getUint8(18) > 2 || view.getUint8(19) > 2)
+        throw new Error('invalid_snapshot');
     const state = new Float32Array(STATE_SIZE), acknowledgements = [], inputStates = [];
     for (let i = 0; i < cars; i++) {
         const at = 40 + i * INPUT_META_BYTES, seq = view.getUint32(at, true), ticks = view.getUint8(at + 4);

@@ -55,7 +55,7 @@ export class Transport {
     if (this.socket?.readyState !== WebSocket.OPEN) return false;
     // Close and use authenticated reconnect rather than adding stale inputs
     // to an unbounded browser/TCP send queue. Offline modes create no socket.
-    if (message.type === 'input' && this.socket.bufferedAmount > 16384) { this.socket.close(1013, 'input_congestion'); return false; }
+    if (message.type === 'input' && this.socket.bufferedAmount > 16384) { this.socket.close(4013, 'input_congestion'); return false; }
     this.socket.send(JSON.stringify(message)); return true;
   }
   stop() {

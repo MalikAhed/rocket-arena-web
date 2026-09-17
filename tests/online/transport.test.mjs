@@ -46,3 +46,15 @@ test('stale socket events cannot disrupt the new connection; leaving clears time
     current.message({ type: 'private_closed' }); assert(!f.transport.inLobby);
   } finally { f.restore(); }
 });
+
+test('browser congestion: close code is script-legal and enters authenticated reconnect without throwing', () => {
+  const f=fixture();
+  try {
+    f.transport.connect(); const socket=f.sockets[0]; socket.message({type:'reserved',graceMs:30000});
+    const originalClose=socket.close.bind(socket); let usedCode;
+    socket.close=code=>{ if(code!==1000 && (code<3000 || code>4999)) throw new DOMException('Invalid close code','InvalidAccessError'); usedCode=code; originalClose(code); };
+    socket.bufferedAmount=20000;
+    assert.doesNotThrow(()=>assert.equal(f.transport.send({type:'input',seq:1}),false));
+    assert.equal(usedCode,4013); assert.equal(f.states.at(-1),'reconnecting');
+  } finally { f.restore(); }
+});

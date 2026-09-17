@@ -124,7 +124,7 @@ export class Room {
       } else this.finish(gone[0] ? 1 : 0, 'team_abandoned');
     }
   }
-  step(now = performance.now()) {
+  step(now = performance.now(), deferSnapshots = false) {
     if (!this.active || this.terminal || !this.arena) return;
     this.tick++;
     const state = this.match.state;
@@ -141,7 +141,14 @@ export class Room {
       if (event === 'kickoff') { this.arena.reset(); this.epoch++; for (const slot of this.slots) { slot.stream.clear(); slot.ack = slot.stream.seq; } }
     } else if (this.match.tick() === 'kickoff') { this.arena.reset(); this.epoch++; for (const slot of this.slots) { slot.stream.clear(); slot.ack = slot.stream.seq; } }
     if (state.phase === 'ended') this.finish(state.winner, 'full_time');
-    if (this.tick % (SIM_HZ / SNAPSHOT_HZ) === 0) this.sendSnapshot();
+    if (this.tick % (SIM_HZ / SNAPSHOT_HZ) === 0) {
+      if (deferSnapshots) this.snapshotDue = true;
+      else this.sendSnapshot();
+    }
+  }
+  flushSnapshot() {
+    if (!this.snapshotDue) return;
+    this.snapshotDue = false; this.sendSnapshot();
   }
   sendSnapshot(id) {
     if (!this.arena) return;

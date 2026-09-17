@@ -3,10 +3,10 @@ import { clamp, interpolateState } from './pose.js';
 // A monotonic SERVER-tick playback timeline. Arrival jitter is a buffer-sizing
 // signal, never the time coordinate used to interpolate between physics states.
 export class SnapshotBuffer {
-    constructor() { this.samples = []; this.epoch = -1; this.playhead = null; this.lastRender = null; this.jitterMs = 0; this.delayMs = 100; this.underflows = 0; this.rejected = 0; }
+    constructor() { this.samples = []; this.epoch = -1; this.playhead = null; this.lastRender = null; this.jitterMs = 0; this.delayMs = 100; this.underflows = 0; this.rejected = 0; this.rebases = 0; this.ageMs = 0; }
     add(snapshot, state, now) {
         const last = this.samples.at(-1), time = snapshot.tick * 1000 / SIM_HZ;
-        if (last && snapshot.epoch === this.epoch && snapshot.tick <= last.tick) {
+        if (last && (snapshot.epoch < this.epoch || snapshot.epoch === this.epoch && snapshot.tick <= last.tick)) {
             this.rejected++;
             return;
         }
@@ -36,6 +36,12 @@ export class SnapshotBuffer {
         const desired = newest.time + Math.max(0, now - newest.arrival) - this.delayMs;
         if (this.playhead === null)
             this.playhead = desired;
+        else if (desired - this.playhead > Math.max(250, this.delayMs + 100)
+            || this.playhead < this.samples[0].time - this.delayMs) {
+            // Suspension/alt-tab recovery is an explicit rebase, not a hidden
+            // many-second slowdown. Ordinary jitter still uses monotonic slew.
+            this.playhead = Math.min(newest.time, desired); this.rebases++;
+        }
         else {
             const error = desired - this.playhead;
             this.playhead += dt * (Math.abs(error) < 8 ? 1 : clamp(1 + error / 1000, .95, 1.05));
@@ -45,6 +51,7 @@ export class SnapshotBuffer {
             this.underflows++;
             this.playhead = newest.time;
         }
+        this.ageMs = Math.max(0, newest.time - this.playhead);
         let lower = this.samples[0], upper = lower;
         for (let i = 1; i < this.samples.length; i++) {
             upper = this.samples[i];

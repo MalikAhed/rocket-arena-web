@@ -116,7 +116,8 @@ export class Lobby {
     if (room.result && !room.busy) { this.rooms.delete(room.id); room.dispose(); }
   }
   update(now) { this.privateRooms.update(now); for (const room of this.rooms.values()) room.checkLifecycle(now); }
-  step(now) { for (const room of this.rooms.values()) room.step(now); }
+  step(now, deferSnapshots = false) { for (const room of this.rooms.values()) room.step(now, deferSnapshots); }
+  flushSnapshots() { for (const room of this.rooms.values()) room.flushSnapshot(); }
   shutdown(reason = 'server_restart') {
     this.stopping = true;
     this.privateRooms.shutdown(reason);
