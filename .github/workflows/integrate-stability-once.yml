@@ -1,0 +1,72 @@
+name: Integrate tested stability changes once
+on:
+  push:
+    branches: [online-play]
+    paths: [.integration/stability.py, .github/workflows/integrate-stability-once.yml]
+permissions:
+  contents: read
+jobs:
+  integrate:
+    if: github.ref == 'refs/heads/online-play' && github.repository == 'MalikAhed/rocket-arena-web'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: arena_test
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: arena_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U arena_test" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ONLINE_TEST_DATABASE_URL: postgresql://arena_test:local-ci-only@127.0.0.1:5432/arena_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: online-play
+          persist-credentials: true
+      - name: Reject any concurrent branch change
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply only hash-verified tested source changes
+        run: python .integration/stability.py
+      - name: Verify and test before committing
+        run: |
+          npm run verify
+          npm test
+          npm run test:online
+          npm run build
+      - name: Commit only the fixed source list and fast-forward online-play
+        run: |
+          python - <<'PY'
+          import runpy, subprocess, hashlib
+          from pathlib import Path
+          files = runpy.run_path('.integration/stability.py')['FILES']
+          for name, spec in files.items():
+              assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == spec['after']
+          subprocess.run(['git','add','--',*files],check=True)
+          staged=set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())
+          assert staged == set(files), 'Unexpected staged changes'
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(stability): decouple GPU waits, reuse prediction history, recover playback and identify releases'
+          git push origin HEAD:online-play
+      - name: Preserve exact test evidence
+        if: always()
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/integration-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stability-integration-${{ github.run_id }}
+          path: evidence
+          retention-days: 3
