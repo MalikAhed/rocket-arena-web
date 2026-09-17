@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="/src/rocket-arena.webmanifest" />
+    <meta name="theme-color" content="#061a37" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Rocket Arena</title>
+    <script type="module" src="/src/game.js"></script>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/styles/arcade-hud.css" />
+    <link rel="stylesheet" href="/src/styles/home.css" />
+    <link rel="stylesheet" href="/src/styles/goal-presentation.css" />
+    <link rel="stylesheet" href="/src/styles/pause-menu.css" />
+    <link rel="stylesheet" href="/src/styles/ui-system.css" />
+    <link rel="stylesheet" href="/src/styles/menu-refinements.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="loading" data-state="loading" style="--load-progress: 0%">
+        <div class="load__panel">
+          <img
+            class="load__mark"
+            src="/assets/ui/rocket-arena-mark.webp"
+            width="1254"
+            height="1254"
+            alt=""
+          />
+          <h1 class="load__title">ROCKET <span>ARENA</span></h1>
+          <p class="load__tagline">Drive hard. Fly high. Own the field.</p>
+            <div class="load__progress-block">
+              <div class="load__status-row">
+                <p class="load__label" role="status" aria-live="polite">Loading game code</p>
+              </div>
+            <div class="load__rule" role="progressbar" aria-label="Game loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span class="load__bar"></span>
+              <output class="load__percent">0%</output>
+            </div>
+            <p class="load__note">Preparing the game modules.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

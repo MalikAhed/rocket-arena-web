@@ -1,0 +1,1160 @@
+[
+  {
+    "file": "android-chrome-192x192.png",
+    "before": 60772,
+    "after": 60772
+  },
+  {
+    "file": "android-chrome-512x512.png",
+    "before": 339401,
+    "after": 339401
+  },
+  {
+    "file": "apple-touch-icon.png",
+    "before": 54412,
+    "after": 54412
+  },
+  {
+    "file": "assets/__vite-browser-external-BIHI7g3E.js",
+    "before": 33,
+    "after": 33
+  },
+  {
+    "file": "assets/app-icon-512-DPODCpjJ.webp",
+    "before": 599900,
+    "after": 26486
+  },
+  {
+    "file": "assets/arena/collision/manifest.json",
+    "before": 215,
+    "after": 215
+  },
+  {
+    "file": "assets/arena/collision/mesh_0.cmf",
+    "before": 16364,
+    "after": 16364
+  },
+  {
+    "file": "assets/arena/collision/mesh_1.cmf",
+    "before": 16364,
+    "after": 16364
+  },
+  {
+    "file": "assets/arena/collision/mesh_10.cmf",
+    "before": 2480,
+    "after": 2480
+  },
+  {
+    "file": "assets/arena/collision/mesh_11.cmf",
+    "before": 2480,
+    "after": 2480
+  },
+  {
+    "file": "assets/arena/collision/mesh_12.cmf",
+    "before": 2480,
+    "after": 2480
+  },
+  {
+    "file": "assets/arena/collision/mesh_13.cmf",
+    "before": 2480,
+    "after": 2480
+  },
+  {
+    "file": "assets/arena/collision/mesh_14.cmf",
+    "before": 416,
+    "after": 416
+  },
+  {
+    "file": "assets/arena/collision/mesh_15.cmf",
+    "before": 416,
+    "after": 416
+  },
+  {
+    "file": "assets/arena/collision/mesh_2.cmf",
+    "before": 16364,
+    "after": 16364
+  },
+  {
+    "file": "assets/arena/collision/mesh_3.cmf",
+    "before": 16364,
+    "after": 16364
+  },
+  {
+    "file": "assets/arena/collision/mesh_4.cmf",
+    "before": 18236,
+    "after": 18236
+  },
+  {
+    "file": "assets/arena/collision/mesh_5.cmf",
+    "before": 18236,
+    "after": 18236
+  },
+  {
+    "file": "assets/arena/collision/mesh_6.cmf",
+    "before": 18236,
+    "after": 18236
+  },
+  {
+    "file": "assets/arena/collision/mesh_7.cmf",
+    "before": 18236,
+    "after": 18236
+  },
+  {
+    "file": "assets/arena/collision/mesh_8.cmf",
+    "before": 416,
+    "after": 416
+  },
+  {
+    "file": "assets/arena/collision/mesh_9.cmf",
+    "before": 416,
+    "after": 416
+  },
+  {
+    "file": "assets/arena/park/park-city-atlas.webp",
+    "before": 629574,
+    "after": 390942
+  },
+  {
+    "file": "assets/arena/park/park-grass-detail.webp",
+    "before": 34534,
+    "after": 23766
+  },
+  {
+    "file": "assets/arena/park/park-horizon.webp",
+    "before": 256740,
+    "after": 128578
+  },
+  {
+    "file": "assets/arena/park/park-land-detail.webp",
+    "before": 153032,
+    "after": 20340
+  },
+  {
+    "file": "assets/arena/park/park-land-reflection.webp",
+    "before": 11910,
+    "after": 6490
+  },
+  {
+    "file": "assets/arena/park/park-land-shade.webp",
+    "before": 63834,
+    "after": 47940
+  },
+  {
+    "file": "assets/arena/park/park-metal-reflection.webp",
+    "before": 11226,
+    "after": 6464
+  },
+  {
+    "file": "assets/arena/park/park-panorama.webp",
+    "before": 38598,
+    "after": 22290
+  },
+  {
+    "file": "assets/arena/park/park-pitch-clean.webp",
+    "before": 145378,
+    "after": 12242
+  },
+  {
+    "file": "assets/arena/park/park-poplars.webp",
+    "before": 731198,
+    "after": 507000
+  },
+  {
+    "file": "assets/arena/park/park-team-flags.webp",
+    "before": 62268,
+    "after": 27882
+  },
+  {
+    "file": "assets/arena/park/pearl-v2-lighting.png",
+    "before": 67823,
+    "after": 67823
+  },
+  {
+    "file": "assets/arena/stadium/bank-metal.webp",
+    "before": 2013436,
+    "after": 144308
+  },
+  {
+    "file": "assets/arena/stadium/continuous-boundary.json.gz",
+    "before": 3711416,
+    "after": 707368
+  },
+  {
+    "file": "assets/audio/boost/loop.wav",
+    "before": 255020,
+    "after": 255020
+  },
+  {
+    "file": "assets/audio/boost/release.wav",
+    "before": 120772,
+    "after": 120772
+  },
+  {
+    "file": "assets/audio/boost/start.wav",
+    "before": 196196,
+    "after": 196196
+  },
+  {
+    "file": "assets/audio/engine/coast-01.wav",
+    "before": 47574,
+    "after": 47574
+  },
+  {
+    "file": "assets/audio/engine/coast-02.wav",
+    "before": 52084,
+    "after": 52084
+  },
+  {
+    "file": "assets/audio/engine/coast-03.wav",
+    "before": 49786,
+    "after": 49786
+  },
+  {
+    "file": "assets/audio/engine/coast-04.wav",
+    "before": 53110,
+    "after": 53110
+  },
+  {
+    "file": "assets/audio/engine/coast-05.wav",
+    "before": 52600,
+    "after": 52600
+  },
+  {
+    "file": "assets/audio/engine/coast-06.wav",
+    "before": 52454,
+    "after": 52454
+  },
+  {
+    "file": "assets/audio/engine/coast-07.wav",
+    "before": 52972,
+    "after": 52972
+  },
+  {
+    "file": "assets/audio/engine/coast-08.wav",
+    "before": 52710,
+    "after": 52710
+  },
+  {
+    "file": "assets/audio/engine/coast-09.wav",
+    "before": 53936,
+    "after": 53936
+  },
+  {
+    "file": "assets/audio/engine/coast-10.wav",
+    "before": 52826,
+    "after": 52826
+  },
+  {
+    "file": "assets/audio/engine/coast-11.wav",
+    "before": 53604,
+    "after": 53604
+  },
+  {
+    "file": "assets/audio/engine/coast-12.wav",
+    "before": 54014,
+    "after": 54014
+  },
+  {
+    "file": "assets/audio/engine/coast-13.wav",
+    "before": 54208,
+    "after": 54208
+  },
+  {
+    "file": "assets/audio/engine/coast-14.wav",
+    "before": 54968,
+    "after": 54968
+  },
+  {
+    "file": "assets/audio/engine/coast-15.wav",
+    "before": 53266,
+    "after": 53266
+  },
+  {
+    "file": "assets/audio/engine/coast-16.wav",
+    "before": 53948,
+    "after": 53948
+  },
+  {
+    "file": "assets/audio/engine/coast-17.wav",
+    "before": 54394,
+    "after": 54394
+  },
+  {
+    "file": "assets/audio/engine/coast-18.wav",
+    "before": 54904,
+    "after": 54904
+  },
+  {
+    "file": "assets/audio/engine/coast-19.wav",
+    "before": 53968,
+    "after": 53968
+  },
+  {
+    "file": "assets/audio/engine/coast-20.wav",
+    "before": 54962,
+    "after": 54962
+  },
+  {
+    "file": "assets/audio/engine/idle.wav",
+    "before": 321984,
+    "after": 321984
+  },
+  {
+    "file": "assets/audio/engine/loaded-01.wav",
+    "before": 50640,
+    "after": 50640
+  },
+  {
+    "file": "assets/audio/engine/loaded-02.wav",
+    "before": 51872,
+    "after": 51872
+  },
+  {
+    "file": "assets/audio/engine/loaded-03.wav",
+    "before": 52394,
+    "after": 52394
+  },
+  {
+    "file": "assets/audio/engine/loaded-04.wav",
+    "before": 52972,
+    "after": 52972
+  },
+  {
+    "file": "assets/audio/engine/loaded-05.wav",
+    "before": 53118,
+    "after": 53118
+  },
+  {
+    "file": "assets/audio/engine/loaded-06.wav",
+    "before": 53144,
+    "after": 53144
+  },
+  {
+    "file": "assets/audio/engine/loaded-07.wav",
+    "before": 52560,
+    "after": 52560
+  },
+  {
+    "file": "assets/audio/engine/loaded-08.wav",
+    "before": 52484,
+    "after": 52484
+  },
+  {
+    "file": "assets/audio/engine/loaded-09.wav",
+    "before": 55000,
+    "after": 55000
+  },
+  {
+    "file": "assets/audio/engine/loaded-10.wav",
+    "before": 52932,
+    "after": 52932
+  },
+  {
+    "file": "assets/audio/engine/loaded-11.wav",
+    "before": 55004,
+    "after": 55004
+  },
+  {
+    "file": "assets/audio/engine/loaded-12.wav",
+    "before": 53564,
+    "after": 53564
+  },
+  {
+    "file": "assets/audio/engine/loaded-13.wav",
+    "before": 54344,
+    "after": 54344
+  },
+  {
+    "file": "assets/audio/engine/loaded-14.wav",
+    "before": 55008,
+    "after": 55008
+  },
+  {
+    "file": "assets/audio/engine/loaded-15.wav",
+    "before": 53916,
+    "after": 53916
+  },
+  {
+    "file": "assets/audio/engine/loaded-16.wav",
+    "before": 54692,
+    "after": 54692
+  },
+  {
+    "file": "assets/audio/engine/loaded-17.wav",
+    "before": 53936,
+    "after": 53936
+  },
+  {
+    "file": "assets/audio/engine/loaded-18.wav",
+    "before": 54924,
+    "after": 54924
+  },
+  {
+    "file": "assets/audio/engine/loaded-19.wav",
+    "before": 55724,
+    "after": 55724
+  },
+  {
+    "file": "assets/audio/engine/loaded-20.wav",
+    "before": 55086,
+    "after": 55086
+  },
+  {
+    "file": "assets/audio/engine/manifest.json",
+    "before": 6776,
+    "after": 4733
+  },
+  {
+    "file": "assets/audio/events/reset.mp3",
+    "before": 118328,
+    "after": 11541
+  },
+  {
+    "file": "assets/audio/impacts/arena-01.mp3",
+    "before": 19926,
+    "after": 2925
+  },
+  {
+    "file": "assets/audio/impacts/arena-02.mp3",
+    "before": 25628,
+    "after": 3093
+  },
+  {
+    "file": "assets/audio/impacts/arena-03.mp3",
+    "before": 47926,
+    "after": 5085
+  },
+  {
+    "file": "assets/audio/impacts/arena-04.mp3",
+    "before": 50350,
+    "after": 5337
+  },
+  {
+    "file": "assets/audio/impacts/arena-05.mp3",
+    "before": 22606,
+    "after": 3597
+  },
+  {
+    "file": "assets/audio/impacts/arena-06.mp3",
+    "before": 42686,
+    "after": 4869
+  },
+  {
+    "file": "assets/audio/impacts/grass-01.mp3",
+    "before": 142664,
+    "after": 12621
+  },
+  {
+    "file": "assets/audio/impacts/grass-02.mp3",
+    "before": 138512,
+    "after": 12453
+  },
+  {
+    "file": "assets/audio/impacts/grass-03.mp3",
+    "before": 141392,
+    "after": 12837
+  },
+  {
+    "file": "assets/audio/impacts/grass-04.mp3",
+    "before": 132336,
+    "after": 11661
+  },
+  {
+    "file": "assets/audio/impacts/grass-05.mp3",
+    "before": 165852,
+    "after": 13581
+  },
+  {
+    "file": "assets/audio/impacts/surface-body-01.mp3",
+    "before": 26378,
+    "after": 3021
+  },
+  {
+    "file": "assets/audio/impacts/surface-body-02.mp3",
+    "before": 41614,
+    "after": 4653
+  },
+  {
+    "file": "assets/audio/impacts/surface-body-03.mp3",
+    "before": 30732,
+    "after": 3885
+  },
+  {
+    "file": "assets/audio/impacts/surface-body-04.mp3",
+    "before": 73160,
+    "after": 6357
+  },
+  {
+    "file": "assets/audio/impacts/surface-body-05.mp3",
+    "before": 52822,
+    "after": 5409
+  },
+  {
+    "file": "assets/audio/impacts/surface-body-06.mp3",
+    "before": 50126,
+    "after": 4761
+  },
+  {
+    "file": "assets/audio/impacts/surface-detail-01.mp3",
+    "before": 29536,
+    "after": 3933
+  },
+  {
+    "file": "assets/audio/impacts/surface-detail-02.mp3",
+    "before": 31516,
+    "after": 4113
+  },
+  {
+    "file": "assets/audio/impacts/surface-detail-03.mp3",
+    "before": 37868,
+    "after": 3969
+  },
+  {
+    "file": "assets/audio/impacts/surface-detail-04.mp3",
+    "before": 57022,
+    "after": 5373
+  },
+  {
+    "file": "assets/audio/impacts/surface-detail-05.mp3",
+    "before": 28762,
+    "after": 3117
+  },
+  {
+    "file": "assets/audio/impacts/surface-detail-06.mp3",
+    "before": 66358,
+    "after": 5517
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-accent-01.mp3",
+    "before": 43388,
+    "after": 3617
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-body-01.mp3",
+    "before": 29536,
+    "after": 3825
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-body-02.mp3",
+    "before": 31516,
+    "after": 4041
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-body-03.mp3",
+    "before": 37868,
+    "after": 4005
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-body-04.mp3",
+    "before": 28762,
+    "after": 3141
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-body-05.mp3",
+    "before": 66358,
+    "after": 5613
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-body-06.mp3",
+    "before": 57022,
+    "after": 5421
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-detail-01.mp3",
+    "before": 48044,
+    "after": 5013
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-detail-02.mp3",
+    "before": 48044,
+    "after": 4989
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-detail-03.mp3",
+    "before": 48044,
+    "after": 4653
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-detail-04.mp3",
+    "before": 48044,
+    "after": 5277
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-detail-05.mp3",
+    "before": 48044,
+    "after": 4581
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-detail-06.mp3",
+    "before": 48044,
+    "after": 4629
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-hard-01.mp3",
+    "before": 26378,
+    "after": 3189
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-hard-02.mp3",
+    "before": 41614,
+    "after": 4833
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-hard-03.mp3",
+    "before": 30732,
+    "after": 3885
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-hard-04.mp3",
+    "before": 73160,
+    "after": 6549
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-hard-05.mp3",
+    "before": 52822,
+    "after": 5517
+  },
+  {
+    "file": "assets/audio/impacts/vehicle-hard-06.mp3",
+    "before": 50126,
+    "after": 5013
+  },
+  {
+    "file": "assets/audio/vehicle/dodge-01.mp3",
+    "before": 460844,
+    "after": 35229
+  },
+  {
+    "file": "assets/audio/vehicle/dodge-02.mp3",
+    "before": 441644,
+    "after": 34725
+  },
+  {
+    "file": "assets/audio/vehicle/dodge-03.mp3",
+    "before": 441644,
+    "after": 34749
+  },
+  {
+    "file": "assets/audio/vehicle/dodge-04.mp3",
+    "before": 440096,
+    "after": 33165
+  },
+  {
+    "file": "assets/audio/vehicle/double-jump-01.mp3",
+    "before": 437036,
+    "after": 34485
+  },
+  {
+    "file": "assets/audio/vehicle/double-jump-02.mp3",
+    "before": 441132,
+    "after": 34341
+  },
+  {
+    "file": "assets/audio/vehicle/double-jump-03.mp3",
+    "before": 430892,
+    "after": 33885
+  },
+  {
+    "file": "assets/audio/vehicle/double-jump-04.mp3",
+    "before": 430892,
+    "after": 34221
+  },
+  {
+    "file": "assets/audio/vehicle/jump-01.mp3",
+    "before": 432044,
+    "after": 35373
+  },
+  {
+    "file": "assets/audio/vehicle/jump-02.mp3",
+    "before": 432044,
+    "after": 32829
+  },
+  {
+    "file": "assets/audio/vehicle/jump-03.mp3",
+    "before": 432044,
+    "after": 31749
+  },
+  {
+    "file": "assets/audio/vehicle/jump-04.mp3",
+    "before": 432044,
+    "after": 31629
+  },
+  {
+    "file": "assets/audio/vehicle/supersonic-enter-a.mp3",
+    "before": 461476,
+    "after": 31605
+  },
+  {
+    "file": "assets/audio/vehicle/supersonic-enter-b.mp3",
+    "before": 460844,
+    "after": 32805
+  },
+  {
+    "file": "assets/audio/vehicle/supersonic-enter-c.mp3",
+    "before": 460844,
+    "after": 30885
+  },
+  {
+    "file": "assets/audio/vehicle/supersonic-loop.mp3",
+    "before": 440364,
+    "after": 43365
+  },
+  {
+    "file": "assets/audio/vehicle/wheel-impact-01.mp3",
+    "before": 88566,
+    "after": 8829
+  },
+  {
+    "file": "assets/audio/vehicle/wheel-impact-02.mp3",
+    "before": 95634,
+    "after": 9333
+  },
+  {
+    "file": "assets/audio/vehicle/wheel-impact-03.mp3",
+    "before": 102392,
+    "after": 10101
+  },
+  {
+    "file": "assets/audio/vehicle/wheel-impact-04.mp3",
+    "before": 94512,
+    "after": 9333
+  },
+  {
+    "file": "assets/bot/LICENSE.txt",
+    "before": 20849,
+    "after": 20849
+  },
+  {
+    "file": "assets/bot/NOTICE.txt",
+    "before": 964,
+    "after": 964
+  },
+  {
+    "file": "assets/bot/metadata.json",
+    "before": 648,
+    "after": 579
+  },
+  {
+    "file": "assets/bot/necto/LICENSE.txt",
+    "before": 20849,
+    "after": 20849
+  },
+  {
+    "file": "assets/bot/necto/NOTICE.txt",
+    "before": 481,
+    "after": 481
+  },
+  {
+    "file": "assets/bot/necto/metadata.json",
+    "before": 1053,
+    "after": 927
+  },
+  {
+    "file": "assets/bot/necto/policy.onnx",
+    "before": 707364,
+    "after": 707364
+  },
+  {
+    "file": "assets/bot/policy.onnx",
+    "before": 1802204,
+    "after": 1802204
+  },
+  {
+    "file": "assets/bot/seer/LICENSE.txt",
+    "before": 1062,
+    "after": 1062
+  },
+  {
+    "file": "assets/bot/seer/NOTICE.txt",
+    "before": 887,
+    "after": 887
+  },
+  {
+    "file": "assets/bot/seer/metadata.json",
+    "before": 1502,
+    "after": 1281
+  },
+  {
+    "file": "assets/bot/seer/policy.onnx",
+    "before": 7413893,
+    "after": 7413893
+  },
+  {
+    "file": "assets/flat-car/model.glb",
+    "before": 286396,
+    "after": 124104,
+    "beforeTriangles": 10924,
+    "afterTriangles": 10924
+  },
+  {
+    "file": "assets/game-car/geometry.bin",
+    "before": 383628,
+    "after": 383628
+  },
+  {
+    "file": "assets/game-car/model.gltf",
+    "before": 24134,
+    "after": 24134
+  },
+  {
+    "file": "assets/garage/cylindrical-panorama-v1.webp",
+    "before": 1526228,
+    "after": 73860
+  },
+  {
+    "file": "assets/garage/showroom-ground-v1.webp",
+    "before": 3055934,
+    "after": 167528
+  },
+  {
+    "file": "assets/golden-boost/plume.webp",
+    "before": 824568,
+    "after": 19964
+  },
+  {
+    "file": "assets/golden-boost/sparks.webp",
+    "before": 716502,
+    "after": 48648
+  },
+  {
+    "file": "assets/golden-boost/turbulence.webp",
+    "before": 1987756,
+    "after": 156306
+  },
+  {
+    "file": "assets/lighting/open-me-park.bin",
+    "before": 4194288,
+    "after": 1048560
+  },
+  {
+    "file": "assets/lighting/reference-daylight-sky.webp",
+    "before": 162048,
+    "after": 35102
+  },
+  {
+    "file": "assets/menu/casual-original.webp",
+    "before": 62264,
+    "after": 39890
+  },
+  {
+    "file": "assets/menu/casual.webp",
+    "before": 29898,
+    "after": 21820
+  },
+  {
+    "file": "assets/menu/freeplay-original.webp",
+    "before": 37528,
+    "after": 23428
+  },
+  {
+    "file": "assets/menu/offline.webp",
+    "before": 18088,
+    "after": 13506
+  },
+  {
+    "file": "assets/menu/play-illustration.webp",
+    "before": 3012,
+    "after": 2170
+  },
+  {
+    "file": "assets/menu/profile-banner-illustration.webp",
+    "before": 3408,
+    "after": 2348
+  },
+  {
+    "file": "assets/menu/rank-necto.webp",
+    "before": 26718,
+    "after": 21628
+  },
+  {
+    "file": "assets/menu/rank-nexto.webp",
+    "before": 29088,
+    "after": 22298
+  },
+  {
+    "file": "assets/menu/rank-seer.webp",
+    "before": 31530,
+    "after": 23694
+  },
+  {
+    "file": "assets/menu/training.webp",
+    "before": 11868,
+    "after": 8764
+  },
+  {
+    "file": "assets/menu/you-vs-bot.webp",
+    "before": 54094,
+    "after": 35040
+  },
+  {
+    "file": "assets/ort-wasm-simd-threaded-CxTQ5xH-.wasm",
+    "before": 11905541,
+    "after": 11905541
+  },
+  {
+    "file": "assets/park-props/dense-bush.glb",
+    "before": 222864,
+    "after": 61156,
+    "beforeTriangles": 10292,
+    "afterTriangles": 8948
+  },
+  {
+    "file": "assets/park-props/forsythia.glb",
+    "before": 2393716,
+    "after": 284528,
+    "beforeTriangles": 5412,
+    "afterTriangles": 4073
+  },
+  {
+    "file": "assets/park-props/frozen-water.webp",
+    "before": 71595,
+    "after": 10352
+  },
+  {
+    "file": "assets/park-props/green-bush.glb",
+    "before": 587544,
+    "after": 95152,
+    "beforeTriangles": 988,
+    "afterTriangles": 814
+  },
+  {
+    "file": "assets/park-props/painted-bush.glb",
+    "before": 158972,
+    "after": 61456,
+    "beforeTriangles": 1389,
+    "afterTriangles": 778
+  },
+  {
+    "file": "assets/park-props/stones.glb",
+    "before": 4161540,
+    "after": 399256,
+    "beforeTriangles": 2106,
+    "afterTriangles": 1562
+  },
+  {
+    "file": "assets/realistic-car/details.glb",
+    "before": 1836428,
+    "after": 742036,
+    "beforeTriangles": 52008,
+    "afterTriangles": 52008
+  },
+  {
+    "file": "assets/sketchfab/CREDITS.md",
+    "before": 2901,
+    "after": 2901
+  },
+  {
+    "file": "assets/sketchfab/amethyst/model.glb",
+    "before": 2817220,
+    "after": 734720,
+    "beforeTriangles": 108970,
+    "afterTriangles": 108970
+  },
+  {
+    "file": "assets/sketchfab/ball/model.glb",
+    "before": 699280,
+    "after": 107536,
+    "beforeTriangles": 4416,
+    "afterTriangles": 4416
+  },
+  {
+    "file": "assets/sketchfab/challenger/model.glb",
+    "before": 3029728,
+    "after": 816928,
+    "beforeTriangles": 33291,
+    "afterTriangles": 33291
+  },
+  {
+    "file": "assets/sketchfab/fennec-v2/ground-ao.webp",
+    "before": 15170,
+    "after": 1120
+  },
+  {
+    "file": "assets/sketchfab/fennec-v2/model.glb",
+    "before": 3101200,
+    "after": 1175264,
+    "beforeTriangles": 84823,
+    "afterTriangles": 84823
+  },
+  {
+    "file": "assets/sketchfab/octane-original/model.glb",
+    "before": 2856104,
+    "after": 726296,
+    "beforeTriangles": 43646,
+    "afterTriangles": 43646
+  },
+  {
+    "file": "assets/sketchfab/spectre/model.glb",
+    "before": 2301548,
+    "after": 799708,
+    "beforeTriangles": 18126,
+    "afterTriangles": 18126
+  },
+  {
+    "file": "assets/sketchfab/takumi/license.txt",
+    "before": 744,
+    "after": 744
+  },
+  {
+    "file": "assets/sketchfab/vesper/model.glb",
+    "before": 1518960,
+    "after": 514820,
+    "beforeTriangles": 53376,
+    "afterTriangles": 53376
+  },
+  {
+    "file": "assets/ui/arena-loading.webp",
+    "before": 71190,
+    "after": 42196
+  },
+  {
+    "file": "assets/ui/goal-scored.webp",
+    "before": 702922,
+    "after": 47972
+  },
+  {
+    "file": "assets/ui/goal-you-scored.webp",
+    "before": 683944,
+    "after": 41160
+  },
+  {
+    "file": "assets/ui/hud/README.md",
+    "before": 211,
+    "after": 211
+  },
+  {
+    "file": "assets/ui/hud/ball-cam.webp",
+    "before": 6910,
+    "after": 6182
+  },
+  {
+    "file": "assets/ui/hud/boost-dial.webp",
+    "before": 26472,
+    "after": 7700
+  },
+  {
+    "file": "assets/ui/hud/boost-fuel.webp",
+    "before": 25514,
+    "after": 17306
+  },
+  {
+    "file": "assets/ui/hud/scoreboard.webp",
+    "before": 26548,
+    "after": 6164
+  },
+  {
+    "file": "assets/ui/rocket-arena-loading.webp",
+    "before": 191406,
+    "after": 58452
+  },
+  {
+    "file": "assets/ui/rocket-arena-mark.webp",
+    "before": 633905,
+    "after": 74248
+  },
+  {
+    "file": "assets/worker-iFqqV1m9.js",
+    "before": 69599,
+    "after": 69599
+  },
+  {
+    "file": "favicon-16x16.png",
+    "before": 809,
+    "after": 809
+  },
+  {
+    "file": "favicon-32x32.png",
+    "before": 2616,
+    "after": 2616
+  },
+  {
+    "file": "favicon.ico",
+    "before": 8878,
+    "after": 8878
+  },
+  {
+    "file": "licenses/GPL-3.0.txt",
+    "before": 35149,
+    "after": 35149
+  },
+  {
+    "file": "licenses/MakeUp-LGPL-3.0.txt",
+    "before": 7652,
+    "after": 7652
+  },
+  {
+    "file": "licenses/Scenery-attribution.txt",
+    "before": 2403,
+    "after": 2403
+  },
+  {
+    "file": "licenses/archivo.txt",
+    "before": 4503,
+    "after": 4503
+  },
+  {
+    "file": "licenses/lilita-one.txt",
+    "before": 4397,
+    "after": 4397
+  },
+  {
+    "file": "licenses/makeup/MakeUp-UltraFast-9.5e-original-source.zip",
+    "before": 400417,
+    "after": 400417
+  },
+  {
+    "file": "licenses/makeup/NOTICE.txt",
+    "before": 1013,
+    "after": 1013
+  },
+  {
+    "file": "licenses/onnxruntime-web.txt",
+    "before": 327941,
+    "after": 327941
+  },
+  {
+    "file": "licenses/phosphor-icons.txt",
+    "before": 1071,
+    "after": 1071
+  },
+  {
+    "file": "licenses/posthog-js.txt",
+    "before": 18517,
+    "after": 18517
+  },
+  {
+    "file": "licenses/webgpu-water-MIT.txt",
+    "before": 1059,
+    "after": 1059
+  },
+  {
+    "file": "physics/THIRD-PARTY-NOTICES.txt",
+    "before": 2378,
+    "after": 2378
+  },
+  {
+    "file": "physics/constructor-config-v1.wasm",
+    "before": 566962,
+    "after": 566962
+  },
+  {
+    "file": "physics/original-launch.wasm",
+    "before": 566894,
+    "after": 566894
+  },
+  {
+    "file": "physics/rocketsim-build.json",
+    "before": 494,
+    "after": 460
+  },
+  {
+    "file": "physics/rocketsim-core.js",
+    "before": 73350,
+    "after": 73350
+  },
+  {
+    "file": "physics/rocketsim-core.wasm",
+    "before": 632369,
+    "after": 632369
+  }
+]

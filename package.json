@@ -1,0 +1,15 @@
+{
+  "name": "rocket-arena-web-compact",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "start": "node tools/serve.mjs",
+    "build": "node tools/build.mjs",
+    "verify": "node tools/verify.mjs",
+    "test": "node --test tools/bot-worker.test.mjs"
+  },
+  "devDependencies": { "esbuild": "0.25.12" },
+  "engines": { "node": ">=22" }
+}

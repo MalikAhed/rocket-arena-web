@@ -1,0 +1,5 @@
+node_modules/
+dist/
+browser-report.json
+gameplay-check.png
+mobile-check.png
