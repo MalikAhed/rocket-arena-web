@@ -24,6 +24,7 @@ export function mountOnline(root, hooks) {
   let active = false, mode = 'casual', size = 1, request = 0, searching = false, generation = 0;
   let matchId = null, reservation = null, latestSnapshot = null, preparing = false, lastResult = null;
   let privateLobby = null, intent = 'queue', invite = '', connectAbort;
+  let lastNetworkDisplay = 0, networkRtt = null;
   let lastSnapshotAt = 0, queueSent = false, poll = 0, oldButtons = [], lastDirection = 0;
   const panel = document.createElement('section'); panel.className = 'online-panel sheet-overlay'; panel.hidden = true;
   panel.innerHTML = `<div class="online-dialog" role="dialog" aria-modal="true" aria-labelledby="online-title">
@@ -205,12 +206,12 @@ export function mountOnline(root, hooks) {
     else if (message.type === 'error') { searching = false; preparing = false; setStatus(message.message === message.code ? explain(message.code) : message.message); show(); controls(); }
     else if (message.type === 'afk_warning') hud.querySelector('.online-banner').textContent = `MOVE YOUR CAR · AFK removal in ${message.seconds}s`;
     else if (message.type === 'forfeit_vote') hud.querySelector('.online-banner').textContent = `FORFEIT VOTE · ${message.votes}/${message.required}`;
-    else if (message.type === 'pong') hud.querySelector('.online-network').textContent = `${reservation?.region ?? 'Server'} · ${Math.max(0, Math.round(performance.now() - message.nonce))} ms`;
+    else if (message.type === 'pong') networkRtt = Math.max(0, Math.round(performance.now() - message.nonce));
     else if (['reconnect_expired', 'afk_removed'].includes(message.type)) { setStatus(explain(message.type)); show(); }
   }
   async function join(message) {
     privateLobby = null;
-    if (matchId === message.matchId && prediction) { prediction.seq = Math.max(prediction.seq, message.ack); transport.send({ type: 'ready', matchId }); hide(); hooks.resume(); return; }
+    if (matchId === message.matchId && prediction) { prediction.resetConnection(message.ack); transport.send({ type: 'ready', matchId }); hide(); hooks.resume(); return; }
     const attempt = generation; preparing = true; reservation = message; matchId = message.matchId;
     const order = [message.self, ...message.roster.map((_, i) => i).filter(i => i !== message.self)];
     try {
@@ -328,13 +329,22 @@ export function mountOnline(root, hooks) {
     update(now, controls, clock) {
       if (!active || !prediction) return;
       const usable = transport?.connected && now - lastSnapshotAt < 1000;
-      prediction.update(now, document.hidden || !document.hasFocus() || !panel.hidden ? NEUTRAL : controlsArray(controls), (seq, values) => transport?.send({ type: 'input', matchId, seq, controls: values }), clock, usable);
+      prediction.update(now, document.hidden || !document.hasFocus() || !panel.hidden ? NEUTRAL : controlsArray(controls), (seq, values, metadata) => transport?.send({ type: 'input', matchId, seq, epoch: metadata.epoch, controls: values }), clock, usable);
       hooks.match.state.paused = false;
+      if (now - lastNetworkDisplay > 500) {
+        const stats = prediction.metrics();
+        hud.querySelector('.online-network').textContent = transport?.connected
+          ? stats.predictionPaused && latestSnapshot?.match.phase === 'playing'
+            ? 'Waiting for server updates · prediction paused'
+            : `${reservation?.region ?? 'Server'} · ${networkRtt === null ? 'connected' : `${networkRtt} ms`} · jitter ${Math.round(stats.jitterMs)} ms`
+          : 'Connection lost · reconnecting';
+        lastNetworkDisplay = now;
+      }
     },
     diagnostics() { return { active, privateRoom: !!reservation?.private, privateLobby: privateLobby ? { ...privateLobby, roster: privateLobby.roster.map(p => ({ ...p })) } : null, matchId, mode, size, connected: !!transport?.connected, tick: latestSnapshot?.tick ?? 0,
       phase: latestSnapshot?.match.phase, self: reservation?.self, roster: reservation?.roster?.map(p => ({ ...p })),
       authoritative: latestSnapshot ? Array.from(latestSnapshot.state) : null, acknowledgements: latestSnapshot?.acknowledgements,
       inputSequence: prediction?.seq ?? 0, pendingInputs: prediction?.pending.length ?? 0, bufferedSnapshots: prediction?.samples.length ?? 0,
-      correctionUnits: prediction?.error ?? 0, result: lastResult }; },
+      correctionUnits: prediction?.error ?? 0, netcode: prediction?.metrics() ?? null, result: lastResult }; },
   };
 }

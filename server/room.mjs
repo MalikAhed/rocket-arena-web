@@ -1,3 +1,4 @@
+import { InputStream } from './input-stream.mjs';
 import { randomUUID } from 'node:crypto';
 import { NativeArena } from './native.mjs';
 import { MatchSession } from '../src/match/session.js';
@@ -15,7 +16,7 @@ export class Room {
     this.tick = 0; this.epoch = 0; this.ready = new Set(); this.forfeits = new Set(); this.resultLeavers = new Set();
     this.match = new MatchSession(); this.match.start(); this.match.state.phase = 'waiting';
     this.slots = players.map(p => ({ id: p.id, connected: true, disconnectedAt: null, lastInput: -Infinity, lastActivity: this.born,
-      lastSeq: 0, ack: 0, controls: [...NEUTRAL], abandoned: false, reason: null, warned: false }));
+      lastSeq: 0, ack: 0, controls: [...NEUTRAL], abandoned: false, reason: null, warned: false, stream: new InputStream({ staleMs: this.config.staleInputMs }) }));
     this.busy = false; this.nextPersistence = 0; this.result = null; this.reservedInStore = false;
   }
   publicRoster() { return this.players.map((p, slot) => ({ slot, id: p.id, name: p.name, team: p.team, visual: p.visual, testClient: !!p.isTest })); }
@@ -53,17 +54,20 @@ export class Room {
     try {
       await this.store?.activate(this.id);
       if (this.terminal || this.slots.some(p => !p.connected)) return;
-      this.active = true; this.startedAt = performance.now(); this.match.start(); this.arena.reset(); this.epoch++;
+      this.active = true; this.startedAt = performance.now(); this.match.start(); this.arena.reset(); this.epoch++; for (const slot of this.slots) { slot.stream.clear(); slot.ack = slot.stream.seq; }
       for (const slot of this.slots) slot.lastActivity = this.startedAt;
       this.broadcast({ type: 'kickoff', matchId: this.id }); this.sendSnapshot();
     } catch { this.cancel('database_unavailable'); }
     finally { this.activating = false; }
   }
-  input(id, seq, values, now = performance.now()) {
+  input(id, seq, values, now = performance.now(), epoch = this.epoch) {
     const index = this.slots.findIndex(p => p.id === id), slot = this.slots[index];
     if (!slot || !slot.connected || slot.abandoned || this.terminal) return;
+    if (!Number.isSafeInteger(epoch) || epoch < 0 || epoch > this.epoch) throw new PublicError('invalid_input');
+    if (epoch !== this.epoch || this.match.state.phase !== 'playing') return;
     if (!validSequence(seq) || !validControls(values) || seq > slot.lastSeq + 2400) throw new PublicError('invalid_input');
     if (seq <= slot.lastSeq) return;
+    slot.stream.push(seq, values, now);
     slot.lastSeq = seq; slot.controls = values; slot.lastInput = now;
     if (values.some(v => v !== 0)) { slot.lastActivity = now; slot.warned = false; }
   }
@@ -71,7 +75,7 @@ export class Room {
     const index = this.slots.findIndex(p => p.id === id), slot = this.slots[index];
     if (!slot || !slot.connected) return;
     slot.connected = false; slot.disconnectedAt = voluntary ? now - this.config.graceMs : now;
-    slot.controls = [...NEUTRAL]; this.arena?.input(index);
+    slot.controls = [...NEUTRAL]; slot.stream.clear(); this.arena?.input(index);
     slot.reason = voluntary ? 'left_match' : 'connection_lost';
     if (!this.active || this.startedAt !== null && this.match.state.phase === 'kickoff' && this.tick < 3 * SIM_HZ) { this.cancel('player_left_before_kickoff'); return; }
     this.broadcast({ type: 'player_disconnected', slot: index, graceMs: voluntary ? 0 : this.config.graceMs });
@@ -79,7 +83,7 @@ export class Room {
   reconnect(id, now = performance.now()) {
     const slot = this.slots.find(p => p.id === id);
     if (!slot || slot.abandoned || slot.disconnectedAt !== null && now - slot.disconnectedAt >= this.config.graceMs && !this.terminal) throw new PublicError('reconnect_expired');
-    slot.connected = true; slot.disconnectedAt = null; slot.lastInput = -Infinity;
+    slot.connected = true; slot.disconnectedAt = null; slot.lastInput = -Infinity; slot.stream.clear(); slot.ack=slot.stream.seq;
     this.admit(id);
     this.broadcast({ type: 'player_reconnected', slot: this.slots.indexOf(slot) });
   }
@@ -126,22 +130,22 @@ export class Room {
     const state = this.match.state;
     if (state.phase === 'playing') {
       this.slots.forEach((slot, index) => {
-        this.arena.input(index, slot.connected && !slot.abandoned && now - slot.lastInput <= this.config.staleInputMs ? slot.controls : NEUTRAL);
-        slot.ack = slot.lastSeq;
+        this.arena.input(index, slot.connected && !slot.abandoned ? slot.stream.step(now) : NEUTRAL);
+        slot.ack = slot.stream.seq;
       });
       this.arena.step();
       const native = this.arena.state;
       if (!native.every(Number.isFinite)) { this.cancel('invalid_simulation'); return; }
       const event = this.match.tick({ goal: this.arena.goal(), ballOnGround: this.arena.ballOnGround,
         kickoffTouched: Math.abs(native[STATE_LAYOUT.BALL]) + Math.abs(native[STATE_LAYOUT.BALL + 1]) > 1 || Math.hypot(native[STATE_LAYOUT.BALL + 12], native[STATE_LAYOUT.BALL + 13]) > 1 });
-      if (event === 'kickoff') { this.arena.reset(); this.epoch++; }
-    } else if (this.match.tick() === 'kickoff') { this.arena.reset(); this.epoch++; }
+      if (event === 'kickoff') { this.arena.reset(); this.epoch++; for (const slot of this.slots) { slot.stream.clear(); slot.ack = slot.stream.seq; } }
+    } else if (this.match.tick() === 'kickoff') { this.arena.reset(); this.epoch++; for (const slot of this.slots) { slot.stream.clear(); slot.ack = slot.stream.seq; } }
     if (state.phase === 'ended') this.finish(state.winner, 'full_time');
     if (this.tick % (SIM_HZ / SNAPSHOT_HZ) === 0) this.sendSnapshot();
   }
   sendSnapshot(id) {
     if (!this.arena) return;
-    const binary = encodeSnapshot({ tick: this.tick, epoch: this.epoch, time: performance.now(), state: this.arena.state, match: this.match.state, acknowledgements: this.slots.map(s => s.ack) });
+    const binary = encodeSnapshot({ tick: this.tick, epoch: this.epoch, time: performance.now(), state: this.arena.state, match: this.match.state, acknowledgements: this.slots.map(s => s.ack), inputStates: this.slots.map(s => s.stream.metadata()) });
     if (id) this.peerFor(id)?.sendBinary(binary);
     else for (const player of this.players) this.peerFor(player.id)?.sendBinary(binary);
     this.lastSnapshotBytes = binary.byteLength;

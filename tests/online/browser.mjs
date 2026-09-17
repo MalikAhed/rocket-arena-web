@@ -4,12 +4,14 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
 import os from 'node:os';
+import { createLagProxy } from '../netcode/lag-proxy.mjs';
 import { createGameServer } from '../../server/index.mjs';
 import { configuration } from '../../server/config.mjs';
 
 const out = 'evidence/online-browser'; await mkdir(out, { recursive: true });
 const app = await createGameServer(configuration({ PORT: '0', MAX_ROOMS: '1' }));
-const host = `http://127.0.0.1:${app.port}`;
+const proxy = await createLagProxy(`http://127.0.0.1:${app.port}`, { rtt: 80, jitter: 20 });
+const host = proxy.url;
 const staticServer = spawn(process.execPath, ['tools/serve.mjs'], { env: { ...process.env, PORT: '4173', ONLINE_SERVER_URL: host, ROCKET_ARENA_LIVE_RELOAD: '0' }, stdio: 'inherit' });
 const delay = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, timeout = 20000) { const start = performance.now(); while (!(await fn())) { if (performance.now() - start > timeout) throw Error('Browser condition timed out'); await delay(50); } }
@@ -17,7 +19,7 @@ let browser, appClosed = false;
 const pages = [], errors = [], checks = [], measurements = [];
 try {
   await until(async () => { try { return (await fetch('http://127.0.0.1:4173')).ok; } catch { return false; } });
-  browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling'] });
+  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined, headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling'] });
   async function newPlayer(name) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const page = await context.newPage(); page.setDefaultTimeout(25000); pages.push(page);
@@ -70,10 +72,14 @@ try {
     const room = app.lobby.rooms.get(reports[0].matchId);
     await primary.page.bringToFront();
     const before = room.arena.state.slice(22, 22 + size * 2 * 51);
-    await primary.page.keyboard.down('KeyW'); await delay(500); await primary.page.keyboard.up('KeyW');
+    await primary.page.keyboard.down('KeyW'); await delay(size === 1 ? 2500 : 500); await primary.page.keyboard.up('KeyW');
     await primary.page.keyboard.down('Space'); await delay(90); await primary.page.keyboard.up('Space');
     await delay(300);
     assert.notDeepEqual(room.arena.state.slice(22, 22 + size * 2 * 51), before);
+    const networked = await Promise.all(current.map(p => p.page.evaluate(() => window.rocketArenaOnline.snapshot())));
+    assert(networked.every(r => r.netcode?.protocol === 2 && r.netcode.simulatedTicks > 0));
+    assert(networked.every(r => r.pendingInputs <= 60 && r.bufferedSnapshots <= 48 && r.netcode.maxReplayTicks <= 120));
+    checks.push(`${size}v${size}: protocol-v2 prediction and bounded buffers through an 80ms RTT / 20ms jitter application-message proxy`);
     await primary.page.screenshot({ path: `${out}/gameplay-${size}v${size}.png` });
     if (size === 1) {
       const oldSelf = reports[0].self;
@@ -101,7 +107,7 @@ try {
     const completed = await Promise.all(current.map(p => p.page.evaluate(() => window.rocketArenaOnline.snapshot())));
     assert(completed.every(r => r.result.winner === 1 && r.result.matchId === room.id));
     measurements.push({ playlist: `${size}v${size}`, clients: size * 2, nativeHeapBytes: room.arena.heapBytes, snapshotBytes: room.lastSnapshotBytes,
-      maxServerStepMs: app.metrics.maxStepMs, clientBuffers: completed.map(r => ({ inputs: r.pendingInputs, snapshots: r.bufferedSnapshots })) });
+      maxServerStepMs: app.metrics.maxStepMs, networkConditions: proxy.conditions, netcode: completed.map(r => r.netcode), clientBuffers: completed.map(r => ({ inputs: r.pendingInputs, snapshots: r.bufferedSnapshots })) });
     if (size === 1) await primary.page.screenshot({ path: `${out}/results.png` });
     checks.push(`${size}v${size}: ${size * 2} independent browser sessions, shared native state/goal, real keyboard input, unanimous-forfeit result`);
     for (const player of current) await player.page.locator('[data-online="back"]').click();
@@ -181,6 +187,6 @@ try {
   await writeFile(`${out}/report.json`, JSON.stringify({ checks, errors, measurements, node: process.version, platform: os.platform(), cpu: os.cpus()[0]?.model,
     browser: browser?.version(), renderer: 'Chromium headless SwiftShader on GitHub-hosted Linux; not a Chromebook benchmark',
     synthetic: true, humanInternetPlayVerified: false, liveOAuthVerified: false }, null, 2));
-  await browser?.close(); if (!appClosed) await app.close(); staticServer.kill('SIGTERM');
+  await browser?.close(); await proxy.close(); if (!appClosed) await app.close(); staticServer.kill('SIGTERM');
   if (staticServer.exitCode === null) await once(staticServer, 'exit');
 }

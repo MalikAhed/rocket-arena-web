@@ -51,7 +51,13 @@ export class Transport {
       this.onState('server_unavailable');
     };
   }
-  send(message) { if (this.socket?.readyState === WebSocket.OPEN) { this.socket.send(JSON.stringify(message)); return true; } return false; }
+  send(message) {
+    if (this.socket?.readyState !== WebSocket.OPEN) return false;
+    // Close and use authenticated reconnect rather than adding stale inputs
+    // to an unbounded browser/TCP send queue. Offline modes create no socket.
+    if (message.type === 'input' && this.socket.bufferedAmount > 16384) { this.socket.close(1013, 'input_congestion'); return false; }
+    this.socket.send(JSON.stringify(message)); return true;
+  }
   stop() {
     this.stopped = true; this.connected = false; clearInterval(this.heartbeat); clearTimeout(this.reconnectTimer); clearTimeout(this.connectTimeout);
     if (this.socket && this.socket.readyState < WebSocket.CLOSING) this.socket.close(1000, 'leaving_online');

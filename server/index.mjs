@@ -23,7 +23,7 @@ export async function createGameServer(config = configuration(), dependencies = 
   lobby = new Lobby({ sessions, store, region: config.region, maxRooms: config.maxRooms, roomConfig: config.roomConfig, privateConfig: config.privateConfig });
   lobby.initializing = !!store && !dependencies.store;
   const rates = new BoundedRates(), peers = new Set();
-  const metrics = { ticks: 0, stalls: 0, maxStepMs: 0, sentBytes: 0, started: Date.now() };
+  const metrics = { ticks: 0, stalls: 0, maxStepMs: 0, sentBytes: 0, skippedSnapshots: 0, started: Date.now() };
   const originAllowed = origin => config.origins.includes(origin);
   const server = http.createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -84,6 +84,7 @@ export async function createGameServer(config = configuration(), dependencies = 
       sendBinary(binary) {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (ws.bufferedAmount > 262144) { ws.close(1013, 'slow_connection'); return; }
+        if (ws.bufferedAmount > 16384) { metrics.skippedSnapshots++; return; }
         ws.send(binary); metrics.sentBytes += binary.byteLength;
       },
       close(code, reason) { ws.close(code, reason); },
@@ -102,7 +103,8 @@ export async function createGameServer(config = configuration(), dependencies = 
         try { message = readMessage(data.toString()); } catch { throw new PublicError('invalid_message'); }
         if (message.type === 'input') {
           if (!peer.session || !peer.inputLimit.take() || lobby.peers.get(peer.session.id) !== peer) throw new PublicError('invalid_input');
-          lobby.roomFor(peer.session, message.matchId).input(peer.session.id, message.seq, message.controls); return;
+          if (!Number.isSafeInteger(message.epoch)) throw new PublicError('invalid_input');
+          lobby.roomFor(peer.session, message.matchId).input(peer.session.id, message.seq, message.controls, performance.now(), message.epoch); return;
         }
         if (!peer.controlLimit.take()) throw new PublicError('rate_limited');
         if (!peer.session) {
@@ -127,7 +129,7 @@ export async function createGameServer(config = configuration(), dependencies = 
         else throw new PublicError('invalid_message');
       } catch (error) {
         const safe = publicError(error); peer.send(safe);
-        if (['invalid_input', 'invalid_message', 'rate_limited', 'update_required', 'session_expired', 'session_replaced'].includes(safe.code)) ws.close(4002, safe.code);
+        if (['invalid_input', 'input_backlog', 'invalid_message', 'rate_limited', 'update_required', 'session_expired', 'session_replaced'].includes(safe.code)) ws.close(4002, safe.code);
       }
     });
   });

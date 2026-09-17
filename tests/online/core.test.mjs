@@ -86,7 +86,7 @@ test('headless native physics uses unchanged six-car WASM with compact snapshots
       const binary = encodeSnapshot({ tick: 120, state: arena.state, match: match.state, acknowledgements: Array(size).fill(12) });
       const decoded = decodeSnapshot(binary); assert.equal(decoded.tick, 120); assert.equal(decoded.acknowledgements[0], 12);
       assert.deepEqual([...decoded.state], [...arena.state]);
-      assert.equal(binary.byteLength, ({ 2: 816, 4: 1232, 6: 1648 })[size]);
+      assert.equal(binary.byteLength, ({ 2: 888, 4: 1376, 6: 1864 })[size]);
     } finally { arena.dispose(); }
   }
 });
@@ -103,7 +103,7 @@ for (const size of [1, 2, 3]) test(`${size}v${size}: independent real WebSocket 
     room.match.phaseTicks = 1; // Test fixture skips countdown, not a network command.
     await waitFor(() => room.match.state.phase === 'playing');
     const oldPosition = room.arena.state.slice(22, 25);
-    clients[0].send({ type: 'input', matchId: room.id, seq: 1, controls: [1, 0, 0, 0, 0, 0, 1, 0] });
+    clients[0].send({ type: 'input', matchId: room.id, epoch: room.epoch, seq: 1, controls: [1, 0, 0, 0, 0, 0, 1, 0] });
     await waitFor(() => clients.every(c => c.snapshots.some(s => s.acknowledgements.includes(1))));
     await delay(150); assert.notDeepEqual(room.arena.state.slice(22, 25), oldPosition);
     const commonTick = clients[0].snapshots.findLast(s => clients.every(c => c.snapshots.some(other => other.tick === s.tick))).tick;

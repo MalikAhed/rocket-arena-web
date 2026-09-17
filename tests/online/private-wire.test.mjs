@@ -52,7 +52,7 @@ for (const size of [1, 2, 3]) test(`private ${size}v${size}: real sockets, lobby
     replacement.send({ type: 'ready', matchId: room.id });
     await waitFor(() => room.active); room.match.phaseTicks = 1;
     await waitFor(() => room.match.state.phase === 'playing');
-    replacement.send({ type: 'input', matchId: room.id, seq: 1, controls: [1, 0, 0, 0, 0, 0, 1, 0] });
+    replacement.send({ type: 'input', matchId: room.id, epoch: room.epoch, seq: 1, controls: [1, 0, 0, 0, 0, 0, 1, 0] });
     await waitFor(() => clients.every(c => c.snapshots.some(s => s.acknowledgements.includes(1))));
     for (const c of clients) if (room.players.find(p => p.id === c.session.player.id).team === 0) c.send({ type: 'forfeit', matchId: room.id });
     await waitFor(() => clients.every(c => c.messages.some(m => m.type === 'result')));

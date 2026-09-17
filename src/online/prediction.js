@@ -1,83 +1,237 @@
 import { STATE_LAYOUT as L, CAR_STATE as C, CAR_STATE_STRIDE as STRIDE } from '../physics/state-layout.js';
-import { controlsObject, NEUTRAL, reorderState, SIM_HZ } from './protocol.js';
-
-// The shipped ABI exposes pose/velocity setters, not a complete rollback state.
-// Prediction is corrected on every snapshot. Jump/suspension internals are
-// approximated on restoration; the server always decides collisions/results.
+import { controlsObject, NEUTRAL, reorderState, SIM_HZ, INPUT_HZ } from './protocol.js';
+import { SnapshotBuffer } from './snapshot-buffer.js';
+import { clamp, distance, interpolateBody, VisualCorrection } from './pose.js';
+const DT = 1000 / SIM_HZ, COMMAND_TICKS = SIM_HZ / INPUT_HZ, MAX_PENDING = 60, MAX_REPLAY_TICKS = 120;
+// This ABI still lacks a full rollback serializer. Compare ACK-aligned history
+// first: do not reset jump/suspension internals on already matching snapshots.
+// On divergence, reconcile physics immediately and smooth only the presentation.
 export class Prediction {
-  constructor(simulation, order) {
-    this.sim = simulation; this.order = order; this.pointer = simulation.module._malloc(24 * 4);
-    this.pending = []; this.latest = null; this.epoch = -1; this.accumulator = 0; this.last = 0;
-    this.lastSend = 0; this.seq = 0; this.samples = []; this.corrections = 0; this.error = 0;
-  }
-  restore(state) {
-    const m = this.sim.module, scratch = this.pointer / 4;
-    m.HEAPF32.set(state.subarray(L.BALL, L.BALL + 18), scratch);
-    m._physics_setBallState(this.pointer);
-    for (let slot = 0; slot < this.order.length; slot++) {
-      const at = L.CARS + slot * STRIDE;
-      m.HEAPF32.fill(0, scratch, scratch + 24);
-      m.HEAPF32.set(state.subarray(at, at + 19), scratch);
-      m.HEAPF32[scratch + 19] = state[at + C.ON_GROUND];
-      m.HEAPF32[scratch + 20] = +(state[at + C.ON_GROUND] !== 1);
-      m.HEAPF32[scratch + 21] = +(state[at + C.HAS_FLIP_OR_JUMP] !== 1);
-      m.HEAPF32[scratch + 22] = state[at + C.IS_FLIPPING];
-      if (m._physics_setCarState(slot, this.pointer) !== 1) throw Error('Prediction state restoration failed');
-      this.sim.setControls(slot, controlsObject(NEUTRAL));
+    constructor(simulation, order) {
+        this.sim = simulation;
+        this.order = order;
+        this.pointer = simulation.module._malloc(24 * 4);
+        this.pending = [];
+        this.latest = null;
+        this.queuedSnapshot = null;
+        this.epoch = -1;
+        this.accumulator = 0;
+        this.last = null;
+        this.seq = 0;
+        this.timeline = new SnapshotBuffer();
+        this.samples = this.timeline.samples;
+        this.corrections = 0;
+        this.error = 0;
+        this.replayTicks = 0;
+        this.maxReplayTicks = 0;
+        this.skippedRestores = 0;
+        this.droppedTicks = 0;
+        this.simulatedTicks = 0;
+        this.rate = 1;
+        this.averageQueue = 3;
+        this.prev = simulation.state.slice();
+        this.curr = this.prev.slice();
+        this.rendered = this.prev.slice();
+        this.localVisual = new VisualCorrection(L.CARS);
+        this.ballVisual = new VisualCorrection(L.BALL);
+        this.ballWeight = 0;
+        this.lastReceive = 0;
+        this.wasPlaying = false;
+        this.resynchronizations = 0;
+        this.needsResync = false;
     }
-    this.sim.step(0);
-  }
-  receive(snapshot, self, now = performance.now()) {
-    if (this.latest && snapshot.tick < this.latest.tick && snapshot.epoch <= this.epoch) return;
-    const state = reorderState(snapshot.state, this.order), reset = snapshot.epoch !== this.epoch;
-    this.latest = snapshot; this.epoch = snapshot.epoch;
-    this.seq = Math.max(this.seq, snapshot.acknowledgements[self]);
-    this.pending = reset ? [] : this.pending.filter(p => p.seq > snapshot.acknowledgements[self] && now - p.at < 1000).slice(-60);
-    if (reset) { this.samples.length = 0; this.accumulator = 0; }
-    const previous = this.sim.state.slice(L.CARS, L.CARS + 3);
-    this.restore(state);
-    if (snapshot.match.phase === 'playing') for (const packet of this.pending) {
-      this.sim.setControls(0, controlsObject(packet.controls)); this.sim.step(packet.ticks);
-    }
-    this.error = Math.hypot(...previous.map((v, i) => v - this.sim.state[L.CARS + i]));
-    if (!reset && this.error > 5) this.corrections++;
-    this.samples.push({ at: now, state }); if (this.samples.length > 24) this.samples.shift();
-    this.last = now;
-  }
-  update(now, controls, send, clock, connected) {
-    if (!this.latest) return;
-    const elapsed = this.last ? Math.max(0, Math.min(100, now - this.last)) : 0; this.last = now;
-    const playing = connected && this.latest.match.phase === 'playing';
-    if (playing) {
-      this.accumulator += elapsed;
-      let ticks = Math.min(12, Math.floor(this.accumulator / (1000 / SIM_HZ)));
-      this.accumulator -= ticks * (1000 / SIM_HZ);
-      if (ticks) {
-        if (now - this.lastSend >= 1000 / 60 - 1) {
-          this.seq++; this.lastSend = now;
-          const packet = { seq: this.seq, controls: [...controls], ticks: 0, at: now };
-          this.pending.push(packet); if (this.pending.length > 60) this.pending.shift();
-          send(this.seq, packet.controls);
+    restore(state, inputs) {
+        const m = this.sim.module, scratch = this.pointer / 4;
+        m.HEAPF32.set(state.subarray(L.BALL, L.BALL + 18), scratch);
+        m._physics_setBallState(this.pointer);
+        for (let slot = 0; slot < this.order.length; slot++) {
+            const at = L.CARS + slot * STRIDE;
+            m.HEAPF32.fill(0, scratch, scratch + 24);
+            m.HEAPF32.set(state.subarray(at, at + 19), scratch);
+            m.HEAPF32[scratch + 19] = state[at + C.ON_GROUND];
+            m.HEAPF32[scratch + 20] = +(state[at + C.ON_GROUND] !== 1);
+            m.HEAPF32[scratch + 21] = +(state[at + C.HAS_FLIP_OR_JUMP] !== 1);
+            m.HEAPF32[scratch + 22] = state[at + C.IS_FLIPPING];
+            if (m._physics_setCarState(slot, this.pointer) !== 1)
+                throw Error('Prediction state restoration failed');
+            this.sim.setControls(slot, controlsObject(inputs?.[this.order[slot]]?.controls ?? NEUTRAL));
         }
-        const packet = this.pending.at(-1);
-        if (packet) { packet.ticks = Math.min(12, packet.ticks + ticks); this.sim.setControls(0, controlsObject(packet.controls)); }
-        else this.sim.setControls(0, controlsObject(NEUTRAL));
-        this.sim.step(ticks);
-      }
-    } else this.accumulator = 0;
-    const target = now - 100;
-    let lower = this.samples[0], upper = this.samples.at(-1);
-    for (let i = 1; i < this.samples.length; i++) if (this.samples[i].at >= target) { lower = this.samples[i - 1]; upper = this.samples[i]; break; }
-    if (!lower || !upper) return;
-    clock.prevState.set(lower.state); clock.currState.set(upper.state);
-    clock.alpha = upper.at === lower.at ? 1 : Math.min(1, Math.max(0, (target - lower.at) / (upper.at - lower.at)));
-    const pose = this.sim.state.subarray(L.CARS, L.CARS + 18);
-    if (playing) {
-      clock.prevState.set(pose, L.CARS); clock.currState.set(pose, L.CARS);
-      const wheels = this.sim.state.subarray(L.CARS + C.WHEELS, L.CARS + C.WHEELS + 12);
-      clock.prevState.set(wheels, L.CARS + C.WHEELS); clock.currState.set(wheels, L.CARS + C.WHEELS);
+        this.sim.step(0);
     }
-    clock.lastTicks = 0; clock.lastDropped = 0; clock.tick = this.latest.tick;
-  }
-  dispose() { this.sim.module._free(this.pointer); this.pending.length = this.samples.length = 0; this.latest = null; }
+    receive(snapshot, self, now = performance.now()) {
+        const previous = this.latest;
+        if (previous && (snapshot.epoch < previous.epoch || snapshot.epoch === previous.epoch && snapshot.tick < previous.tick))
+            return;
+        if (previous && snapshot.epoch === previous.epoch && snapshot.tick === previous.tick && snapshot.match.phase === previous.match.phase)
+            return;
+        if (previous && now - this.lastReceive > 300) {
+            this.needsResync = true;
+            this.timeline.clear();
+        }
+        this.latest = snapshot;
+        this.lastReceive = now;
+        const state = reorderState(snapshot.state, this.order);
+        this.timeline.add(snapshot, state, now);
+        this.queuedSnapshot = { snapshot, state, self };
+        // Never alter the render/simulation clock here. Doing so loses frame time
+        // each time a network packet arrives, especially at 30 or 144 FPS.
+    }
+    agrees(history, state) {
+        if (!history)
+            return false;
+        for (let slot = 0; slot < this.order.length; slot++) {
+            const at = L.CARS + slot * STRIDE;
+            if (distance(history, state, at) > 2 || distance(history, state, at + 12) > 10 || distance(history, state, at + 3) > .015 || distance(history, state, at + 9) > .015)
+                return false;
+            for (const flag of [C.ON_GROUND, C.DEMOED, C.HAS_FLIP_OR_JUMP, C.IS_FLIPPING])
+                if (history[at + flag] !== state[at + flag])
+                    return false;
+        }
+        return distance(history, state, L.BALL) < 4 && distance(history, state, L.BALL + 12) < 15;
+    }
+    reconcile() {
+        if (!this.queuedSnapshot)
+            return;
+        const { snapshot, state, self } = this.queuedSnapshot;
+        this.queuedSnapshot = null;
+        const reset = snapshot.epoch !== this.epoch, playing = snapshot.match.phase === 'playing';
+        const resync = this.needsResync;
+        this.needsResync = false;
+        if (resync)
+            this.resynchronizations++;
+        const meta = snapshot.inputStates?.[self] ?? { seq: snapshot.acknowledgements[self], ticks: COMMAND_TICKS, queued: 0, idle: 0 };
+        const historical = this.pending.find(p => p.seq === meta.seq)?.states?.[meta.ticks - 1];
+        const agrees = !reset && !resync && playing && !meta.idle && this.agrees(historical, state);
+        this.seq = Math.max(this.seq, meta.seq);
+        this.epoch = snapshot.epoch;
+        if (reset || !playing) {
+            this.pending.length = 0;
+            this.accumulator = 0;
+            this.rate = 1;
+            this.averageQueue = 3;
+        }
+        else
+            this.pending = this.pending.filter(p => (!resync || this.lastReceive - p.at < 250) && (p.seq > meta.seq || p.seq === meta.seq && p.ticks > meta.ticks)).slice(-MAX_PENDING);
+        this.replayTicks = 0;
+        if (agrees) {
+            this.skippedRestores++;
+            this.error = 0;
+        }
+        else {
+            const before = this.sim.state.slice();
+            if (resync) {
+                before.set(this.rendered.subarray(L.CARS, L.CARS + 18), L.CARS);
+                before.set(this.rendered.subarray(L.BALL, L.BALL + 18), L.BALL);
+                this.localVisual.reset();
+                this.ballVisual.reset();
+            }
+            this.restore(state, snapshot.inputStates);
+            this.prev.set(this.sim.state);
+            if (playing)
+                for (const packet of this.pending) {
+                    const skip = packet.seq === meta.seq ? meta.ticks : 0;
+                    this.sim.setControls(0, controlsObject(packet.controls));
+                    for (let t = skip; t < packet.ticks && this.replayTicks < MAX_REPLAY_TICKS; t++) {
+                        this.prev.set(this.sim.state);
+                        this.sim.step(1);
+                        packet.states[t] = this.sim.state.slice();
+                        this.replayTicks++;
+                    }
+                }
+            this.curr.set(this.sim.state);
+            this.error = distance(before, this.curr, L.CARS);
+            if (!reset && this.error > .5)
+                this.corrections++;
+            const teleport = reset || !playing || before[L.CARS + C.DEMOED] !== this.curr[L.CARS + C.DEMOED];
+            this.localVisual.rebase(before, this.curr, teleport);
+            this.ballVisual.rebase(before, this.curr, reset || !playing);
+        }
+        this.maxReplayTicks = Math.max(this.maxReplayTicks, this.replayTicks);
+        if (playing && meta.seq) {
+            this.averageQueue += (meta.queued - this.averageQueue) * .125;
+            const target = 1 + clamp((3 - this.averageQueue) / 150, -.02, .02);
+            this.rate += (target - this.rate) * .15;
+        }
+    }
+    update(now, controls, send, clock, connected) {
+        if (!this.latest || !Number.isFinite(now))
+            return;
+        const elapsed = this.last === null ? 0 : Math.max(0, now - this.last);
+        this.last = now;
+        this.reconcile();
+        const playing = connected && now - this.lastReceive < 300 && this.latest.match.phase === 'playing';
+        if (playing) {
+            this.accumulator += Math.min(elapsed, 100) * this.rate;
+            const due = Math.floor(this.accumulator / DT + 1e-9), count = Math.min(12, due);
+            this.accumulator = Math.max(0, this.accumulator - due * DT);
+            this.droppedTicks += Math.max(0, due - count) + Math.floor(Math.max(0, elapsed - 100) / DT);
+            for (let tick = 0; tick < count; tick++) {
+                let packet = this.pending.at(-1);
+                if (!packet || packet.ticks === COMMAND_TICKS) {
+                    packet = { seq: ++this.seq, controls: [...controls], ticks: 0, at: now, states: [] };
+                    this.pending.push(packet);
+                    if (this.pending.length > MAX_PENDING)
+                        this.pending.shift();
+                    send(packet.seq, packet.controls, { epoch: this.epoch });
+                }
+                this.sim.setControls(0, controlsObject(packet.controls));
+                this.prev.set(this.sim.state);
+                this.sim.step(1);
+                packet.states[packet.ticks++] = this.sim.state.slice();
+                this.curr.set(this.sim.state);
+                this.simulatedTicks++;
+            }
+        }
+        else {
+            this.accumulator = 0;
+            this.sim.setControls(0, controlsObject(NEUTRAL));
+        }
+        const frozenLocal = !playing && this.latest.match.phase === 'playing' ? this.rendered.slice(L.CARS, L.CARS + STRIDE) : null;
+        if (!this.timeline.render(now, this.rendered))
+            return;
+        if (playing) {
+            const alpha = clamp(this.accumulator / DT, 0, 1);
+            // Copy ALL local state, not just pose: boost/jump/wheels must share its timeline.
+            this.rendered.set(this.curr.subarray(L.CARS, L.CARS + STRIDE), L.CARS);
+            interpolateBody(this.rendered, this.prev, this.curr, L.CARS, alpha, DT / 1000, false);
+            this.localVisual.apply(this.rendered, elapsed / 1000);
+            // Predict nearby ball contact with the same simulation as the local car.
+            // Far-away ball remains on the stable snapshot timeline; crossfade avoids a jump.
+            const separation = Math.hypot(...[0, 1, 2].map(i => this.curr[L.CARS + i] - this.curr[L.BALL + i]));
+            const target = clamp((900 - separation) / 400, 0, 1);
+            this.ballWeight += (target - this.ballWeight) * (1 - Math.exp(-Math.min(elapsed, 100) / 65));
+            const ball = this.curr.slice();
+            interpolateBody(ball, this.prev, this.curr, L.BALL, alpha, DT / 1000, false);
+            this.ballVisual.apply(ball, elapsed / 1000);
+            interpolateBody(this.rendered, this.rendered, ball, L.BALL, this.ballWeight, 0, false);
+        }
+        else if (frozenLocal) {
+            // Hold the last rendered local pose during a genuine update gap. Do not
+            // jump backwards onto the delayed remote timeline when prediction pauses.
+            this.rendered.set(frozenLocal, L.CARS);
+        }
+        else {
+            this.localVisual.reset();
+            this.ballVisual.reset();
+            this.ballWeight = 0;
+        }
+        this.wasPlaying = playing;
+        clock.prevState.set(this.rendered);
+        clock.currState.set(this.rendered);
+        clock.alpha = 1;
+        clock.lastTicks = 0;
+        clock.lastDropped = 0;
+        clock.tick = this.latest.tick;
+    }
+    resetConnection(ack) {
+        this.seq = Math.max(this.seq, ack);
+        this.pending.length = 0;
+        this.needsResync = true;
+        this.accumulator = 0;
+        this.rate = 1;
+        this.averageQueue = 3;
+        this.timeline.clear();
+    }
+    metrics() { return { protocol: 2, resynchronizations: this.resynchronizations, predictionPaused: !this.wasPlaying, simulatedTicks: this.simulatedTicks, droppedTicks: this.droppedTicks, corrections: this.corrections, skippedRestores: this.skippedRestores, correctionUnits: this.error, visualOffsetUnits: Math.hypot(...this.localVisual.position), hardSnaps: this.localVisual.hardSnaps, jitterMs: this.timeline.jitterMs, interpolationMs: this.timeline.delayMs, interpolationUnderruns: this.timeline.underflows, inputQueueTicks: this.averageQueue, inputTimeScale: this.rate, maxReplayTicks: this.maxReplayTicks }; }
+    dispose() { this.sim.module._free(this.pointer); this.pending.length = 0; this.timeline.clear(); this.latest = this.queuedSnapshot = null; }
 }
