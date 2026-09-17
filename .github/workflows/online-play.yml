@@ -17,6 +17,19 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: arena_test
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: arena_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U arena_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ONLINE_TEST_DATABASE_URL: postgresql://arena_test:local-ci-only@127.0.0.1:5432/arena_test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,37 +38,37 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install locked baseline dependencies
+      - name: Install locked dependencies
         run: npm ci
+      - name: Prepare evidence directory
+        run: mkdir -p evidence
       - name: Verify protected assets
-        run: npm run verify
+        run: npm run verify | tee evidence/verify.log
       - name: Existing bot regression tests
-        run: npm test
-      - name: Build static frontend without deploying
-        run: npm run build
+        run: npm test | tee evidence/bots.log
+      - name: Online transport, rules, security and real PostgreSQL tests
+        run: npm run test:online | tee evidence/online-tests.log
+      - name: Build without deploying
+        run: npm run build | tee evidence/build.log
         env:
           ROCKET_ARENA_BASE_PATH: /rocket-arena-web
-      # One-time dependency/bootstrap audit. Replace with npm ci once the
-      # resolved lockfile has been inspected and committed on this branch.
-      - name: Resolve online dependencies for inspection
-        run: |
-          npm install --save-exact ws pg @supabase/supabase-js
-          npm install --save-dev --save-exact playwright wabt
-          npm audit --omit=dev --json > dependency-audit.json || true
       - name: Install test browser
         run: npx playwright install --with-deps chromium
-      - name: Capture baseline browser evidence
-        run: node tools/browser-baseline.mjs
-      - name: Package reproducible inspection workspace
-        if: always()
+      - name: Browser regression and online end-to-end evidence
         run: |
-          git ls-files > tracked-files.txt
-          mkdir -p evidence
-          tar -czf "$RUNNER_TEMP/rocket-inspection.tgz" src public tools node_modules package.json package-lock.json index.html README.md SOURCE.md VALIDATION.md asset-report.json tracked-files.txt evidence dependency-audit.json
+          if [ -f tests/online/browser.mjs ]; then
+            node tests/online/browser.mjs
+          else
+            node tools/browser-baseline.mjs
+          fi
+      - name: Production dependency audit
+        run: npm audit --omit=dev --json > evidence/dependency-audit.json
+      - name: Package exact tested workspace
+        if: always()
+        run: tar --exclude=.git --exclude=node_modules --exclude=dist -czf "$RUNNER_TEMP/online-workspace.tgz" .
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rocket-inspection-${{ github.sha }}
-          path: ${{ runner.temp }}/rocket-inspection.tgz
-          retention-days: 1
-          if-no-files-found: error
+          name: online-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/online-workspace.tgz
+          retention-days: 7
