@@ -1,12 +1,12 @@
-# Rocket Arena — online-play beta
+# Rocket Arena — online play
 
-The existing game now has server-authoritative Casual multiplayer, account-based Ranked integration, and separate offline Bots and Free Play. This is the `online-play` branch, not a replacement project. **The existing GitHub Pages site remains the default-branch edition, not a deployed online preview.** Do not merge or replace it without Malik's approval.
+The existing game includes authoritative Casual 1v1/2v2/3v3, account-gated Ranked, private Casual rooms, and separate offline Bots and Free Play. Malik approved publishing this version to the existing main GitHub Pages site on 2026-09-17. **This is still a beta, not a zero-stutter or competitive-reliability certification.**
 
-The integrated code and rendered artwork are committed in `33a1f93952ede7714347d114da022addda4ae7d4`. A previous CI push failed while changing a workflow; that handoff failure was recovered without a force-push. CI is read-only again. You do not need to apply an integration patch or retrieve source from an artifact.
+The previous offline edition is preserved on `offline-stable-2026-09-17` at `0a3571fcc0a752c7e479a5933ecc8a6bcc568598`. Do not delete that rollback branch or force-push main.
 
-## Start locally — guest Casual
+## Local guest Casual
 
-Requires Node 22+ and npm. From a fresh clone:
+Node 22+ and npm are required:
 
 ```sh
 git clone https://github.com/MalikAhed/rocket-arena-web.git
@@ -17,23 +17,23 @@ cp .env.example .env
 npm run server
 ```
 
-In another terminal in the same directory:
+In a second terminal:
 
 ```sh
 PORT=4173 npm start
 ```
 
-Open `http://127.0.0.1:4173/` in independent browser profiles. Select Play → Casual and the same playlist. You need 2, 4 or 6 ready participants for 1v1, 2v2 or 3v3. Guests need only a display name; there is no automatic bot filling. The backend defaults to port 8080, hence the explicit frontend port override. Stop the server and Bots/Free Play still work.
+Open `http://127.0.0.1:4173/` in independent browser profiles. Casual requires 2, 4 or 6 ready human participants. Private Casual has create/join codes and host-only start. Neither queue silently adds bots. Stop the backend and Bots/Free Play remain accessible.
 
-Without `.env`, use `PORT=8080 npm run server` and, separately, `ONLINE_SERVER_URL=http://127.0.0.1:8080 PORT=4173 ROCKET_ARENA_LIVE_RELOAD=0 npm start`. An unconfigured frontend reports that online services are unavailable rather than pretending to search.
+Without `.env`, use `PORT=8080 npm run server` and separately `ONLINE_SERVER_URL=http://127.0.0.1:8080 PORT=4173 ROCKET_ARENA_LIVE_RELOAD=0 npm start`.
 
-## Durable storage and accounts
+## Accounts and durable Ranked
 
-`docker compose up --build` provides a local PostgreSQL database, game server and built frontend. The named database volume persists across ordinary `docker compose down`; `down -v` deliberately destroys it. The development password in Compose is not a production credential. The Docker images and startup smoke tests passed; the complete Compose deployment still needs its own acceptance run.
+Ranked requires real Supabase/GitHub OAuth plus durable PostgreSQL. Configure `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, validated TLS and exact redirect/origin settings. Apply all numbered migrations with `npm run db:migrate`; the second migration journals authoritative outcomes for recovery and exactly-once rating application.
 
-Ranked requires a durable PostgreSQL connection and a real configured Supabase/GitHub OAuth provider. Configure `DATABASE_URL`, `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, run `npm run db:migrate`, then restart the server and rebuild/restart the frontend. Never expose database credentials, OAuth secrets or Supabase secret/service-role keys in public config. The available account flow uses GitHub-managed registration/sign-in/recovery, not app-owned passwords or a development SMTP sender.
+Never expose database passwords, service-role keys or OAuth secrets in public configuration. Accounts that are not configured are shown as unavailable, not simulated. Casual guests do not need email or passwords. The rating model is **Arena Team Elo v1, not Rocket League's exact MMR**.
 
-See [deployment and recovery](docs/online-play/DEPLOYMENT.md) for precise provider setup, callbacks, TLS, free limits, backups and rollback. Project creation and live OAuth/provider deployment are still external setup steps; no live multiplayer URL is claimed.
+See [deployment](docs/online-play/DEPLOYMENT.md), [ranking](docs/online-play/RANKING.md), [architecture](docs/online-play/ARCHITECTURE.md), and [stability release and remaining gates](docs/online-play/STABILITY_RELEASE.md). Historical deployment restrictions/status in earlier handoffs are superseded only by explicitly verified newer release evidence.
 
 ## Verification
 
@@ -41,23 +41,27 @@ See [deployment and recovery](docs/online-play/DEPLOYMENT.md) for precise provid
 npm run verify
 npm test
 npm run test:online
-# Set ONLINE_TEST_DATABASE_URL to a DISPOSABLE PostgreSQL database for DB tests.
+# Set ONLINE_TEST_DATABASE_URL to a DISPOSABLE database to include DB tests.
 npx playwright install --with-deps chromium
 npm run test:browser
 npm run build
-# Serve a root build locally:
-ROCKET_ARENA_DIST=1 PORT=4173 npm start
+node tests/netcode/benchmark.mjs
 ```
 
-The browser suite uses real independent browser contexts and WebSockets, but synthetic players and internal goal fixtures. It is not proof of human Internet play. [Verification evidence and remaining gaps](docs/online-play/VERIFICATION.md) distinguishes passing tests from unverified features. No Chromebook benchmark or production concurrency guarantee is claimed.
+`docker compose up --build` provides the local database/server/frontend setup. `docker compose down -v` deliberately removes its database volume; ordinary `down` does not. Do not run development fixture/seed tools against production.
 
-## Code and design
+The native benchmark uses independent WASM instances, seeded synthetic controls and virtual-time latency. Browser tests use independent contexts, real WebSockets and an ordered message-delay proxy. They are not human Internet play, packet-level loss simulation, Chromebook benchmarks or provider-capacity certification. Failed/skipped tests must be reported, not inferred from old passing runs.
 
-- `server/`: authoritative native simulation, queues, lifecycle, provider verification, PostgreSQL transactions and ratings.
-- `src/online/`: shared protocol, browser transport, approximate prediction/reconciliation, authentication and UI.
-- `server/migrations/001_online.sql`: private game schema and idempotent migration; no production fixture users.
-- `public/assets/online/`: five rendered cards and editable original rank badges. `tools/render-online-art.mjs`, `tools/online-art-scene.js` and `tools/render-online-scenes.mjs` preserve editable sources.
+## Main-site release
 
-Read [architecture and failure policies](docs/online-play/ARCHITECTURE.md), [the rating model](docs/online-play/RANKING.md), and [artwork provenance](docs/online-play/ARTWORK.md). Ratings are **Arena Team Elo v1, not Rocket League's exact MMR**. The supplied native API lacks full rollback state; prediction is approximate and needs high-latency competitive playtesting.
+The Pages workflow runs full multiplayer/database/browser/container verification before publishing. Its build uses the actual Render backend by default and optional public repository variables `ONLINE_SERVER_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`. The deployed public config and JS/CSS URLs identify the commit. The backend must be deployed too; merging the frontend cannot update Render by itself.
 
-Existing car models, arena geometry, native physics constants, camera implementation, lighting, shaders and graphics presets—including Potato—are preserved. Narrow adapters add online roster/state handling. Original optimization notes are retained in [the compact-edition baseline](docs/compact-baseline.md). Existing component notices remain in `SOURCE.md`, `public/licenses/` and `public/assets/sketchfab/CREDITS.md`; this contribution grants no new blanket rights over inherited assets.
+A post-deploy check attempts a real private two-browser Internet match from Pages and stores its screenshots/report. **A successful static deployment is not proof that this live acceptance passed.** Check both jobs. No paid service, billing activation or workspace selection is implicit in publishing main.
+
+## Code and preservation
+
+`server/` owns native simulation, validated inputs, queues, lifecycle, provider verification and PostgreSQL transactions. `src/online/` implements protocol, prediction, remote interpolation, auth and UI. The stability pass adds GPU-wait-independent input maintenance, pooled prediction history, pause recovery, snapshot coalescing and timing diagnostics. See [netcode design](docs/online-play/NETCODE.md).
+
+The native physics binary, handling constants, collision geometry, camera implementation, car/arena assets, lighting/shaders and product graphics presets are preserved. There is a narrow rendering-scheduler callback for online input maintenance; it does not redefine Potato or run offline connections. Full native internal-state rollback is not yet exposed by the shipped ABI.
+
+Existing component notices remain in `SOURCE.md`, `public/licenses/` and asset credits. This contribution grants no new blanket rights over inherited material. Original optimization notes are retained in [the compact baseline](docs/compact-baseline.md).

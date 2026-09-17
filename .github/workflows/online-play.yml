@@ -5,6 +5,7 @@ on:
     branches: [online-play]
   pull_request:
     branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -61,8 +62,7 @@ jobs:
       - name: Independent 1v1, 2v2, 3v3 browsers and offline regression
         run: npm run test:browser | tee evidence/browser.log
       - name: Container build and startup checks
-        run: |
-          bash tools/container-smoke.sh
+        run: bash tools/container-smoke.sh
       - name: Production dependency audit
         run: npm audit --omit=dev --json > evidence/dependency-audit.json
       - name: Package tracked source and verification evidence

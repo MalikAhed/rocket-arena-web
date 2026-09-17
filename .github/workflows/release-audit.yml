@@ -9,7 +9,7 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,16 +17,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Inspect public release endpoints without modifying services
+      - name: Inspect public endpoints without changing services
         run: node tools/release-probe.mjs
-      - name: Package locked dependencies for reproducing tests offline
-        run: tar -czf /tmp/arena-test-dependencies.tgz node_modules
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: release-audit-${{ github.run_id }}
-          path: |
-            evidence/release-probe.json
-            /tmp/arena-test-dependencies.tgz
-          retention-days: 3
+          path: evidence/release-probe.json
+          retention-days: 7
