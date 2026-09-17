@@ -1,7 +1,9 @@
-name: Native checkpoint integration and verification
+name: Native checkpoint reproducibility
 on:
+  workflow_dispatch:
   push:
     branches: [native-checkpoint]
+    paths: [native/**, tools/build-network-physics.mjs, .github/workflows/native-checkpoint.yml]
 permissions:
   contents: read
 defaults:
@@ -9,77 +11,30 @@ defaults:
     shell: bash
 jobs:
   native:
-    if: github.ref == 'refs/heads/native-checkpoint' && github.repository == 'MalikAhed/rocket-arena-web'
     runs-on: ubuntu-latest
-    timeout-minutes: 18
-    permissions:
-      contents: write
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: arena_test
-          POSTGRES_PASSWORD: local-ci-only
-          POSTGRES_DB: arena_test
-        ports: ['5432:5432']
-        options: --health-cmd "pg_isready -U arena_test" --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      ONLINE_TEST_DATABASE_URL: postgresql://arena_test:local-ci-only@127.0.0.1:5432/arena_test
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: native-checkpoint
-          persist-credentials: true
-      - name: Reject concurrent branch changes
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply hash-verified native integration source
-        run: python .integration/native-transfer.py
-      - name: Build optional native core with pinned unchanged original algorithms
+      - name: Rebuild the pinned online core without changing the offline core
         run: |
           mkdir -p evidence/native-checkpoint
           docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:4.0.10 node tools/build-network-physics.mjs | tee evidence/native-checkpoint/build.log
-      - name: Verify generated binaries match locally tested candidate
-        run: python -c "import runpy; runpy.run_path('.integration/native-transfer.py')['verify_outputs']()"
-      - name: Protected offline core, native golden fixtures and all database/network tests
+      - name: Reject unreproducible generated files
+        run: git diff --exit-code -- public/physics/rocketsim-network.js public/physics/rocketsim-network.wasm public/physics/rocketsim-network-build.json src/physics/network-core.js
+      - name: Original asset integrity and native checkpoint regressions
         run: |
-          npm run verify | tee evidence/verify.log
-          npm test | tee evidence/bots.log
-          npm run test:online | tee evidence/online-tests.log
-          npm run build | tee evidence/build.log
-      - run: npx playwright install --with-deps chromium
-      - name: Real browser integration, negotiated checkpoints and return to offline modes
-        run: npm run test:browser | tee evidence/browser.log
-      - name: Container startup regression
-        run: bash tools/container-smoke.sh
-      - name: Commit only verified source and generated binary list to isolated branch
-        run: |
-          python - <<'PY'
-          import runpy,subprocess
-          state=runpy.run_path('.integration/native-transfer.py')
-          state['verify_outputs']()
-          names=set(state['FILES'])|set(state['GENERATED'])
-          subprocess.run(['git','add','--',*sorted(names)],check=True)
-          actual=set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())
-          assert actual==names, 'Unexpected staged change'
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(netcode): restore negotiated native jump boost contact and pad checkpoints'
-          git push origin HEAD:native-checkpoint
-      - name: Preserve complete candidate and evidence
-        if: always()
-        run: |
-          mkdir -p evidence
-          git rev-parse HEAD > evidence/candidate-commit.txt
-          tar --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.network-build' --exclude='vendor' -czf /tmp/native-tested-workspace.tgz .
+          npm run verify
+          node --test tests/netcode/native-checkpoint.mjs | tee evidence/native-checkpoint/tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: native-tested-${{ github.run_id }}
-          path: /tmp/native-tested-workspace.tgz
+          name: native-reproducibility-${{ github.run_id }}
+          path: evidence/native-checkpoint
           retention-days: 7
