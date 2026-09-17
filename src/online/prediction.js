@@ -1,6 +1,7 @@
 import { STATE_LAYOUT as L, CAR_STATE as C, CAR_STATE_STRIDE as STRIDE } from '../physics/state-layout.js';
 import { controlsObject, NEUTRAL, reorderState, SIM_HZ, INPUT_HZ } from './protocol.js';
 import { SnapshotBuffer } from './snapshot-buffer.js';
+import { copyConfirmedEvents } from './presentation-events.js';
 import { clamp, distance, interpolateBody, VisualCorrection } from './pose.js';
 const DT = 1000 / SIM_HZ, COMMAND_TICKS = SIM_HZ / INPUT_HZ, MAX_PENDING = 60, MAX_REPLAY_TICKS = 120;
 // This ABI still lacks a full rollback serializer. Compare ACK-aligned history
@@ -191,7 +192,7 @@ export class Prediction {
             return;
         if (playing) {
             const alpha = clamp(this.accumulator / DT, 0, 1);
-            // Copy ALL local state, not just pose: boost/jump/wheels must share its timeline.
+            // Predicted movement/boost/jump/wheels share a timeline; event counters are confirmed below.
             this.rendered.set(this.curr.subarray(L.CARS, L.CARS + STRIDE), L.CARS);
             interpolateBody(this.rendered, this.prev, this.curr, L.CARS, alpha, DT / 1000, false);
             this.localVisual.apply(this.rendered, elapsed / 1000);
@@ -215,6 +216,7 @@ export class Prediction {
             this.ballVisual.reset();
             this.ballWeight = 0;
         }
+        copyConfirmedEvents(this.rendered, this.latest.state, this.order[0]);
         this.wasPlaying = playing;
         clock.prevState.set(this.rendered);
         clock.currState.set(this.rendered);
