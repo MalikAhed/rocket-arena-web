@@ -1,3 +1,4 @@
+import { PrivateRooms } from './private-rooms.mjs';
 import { Room } from './room.mjs';
 import { CAR_VISUALS } from '../src/online/protocol.js';
 import { initialRating } from './rating.mjs';
@@ -16,10 +17,11 @@ export function balancedTeams(entries, size) {
   return best;
 }
 export class Lobby {
-  constructor({ sessions, store = null, region = 'local', maxRooms = 2, maxQueue = 128, roomConfig = {}, RoomClass = Room }) {
+  constructor({ sessions, store = null, region = 'local', maxRooms = 2, maxQueue = 128, roomConfig = {}, privateConfig = {}, RoomClass = Room }) {
     this.sessions = sessions; this.store = store; this.region = region; this.maxRooms = maxRooms; this.maxQueue = maxQueue;
     this.roomConfig = roomConfig; this.RoomClass = RoomClass;
     this.peers = new Map(); this.entries = new Map(); this.rooms = new Map(); this.stopping = false;
+    this.privateRooms = new PrivateRooms(this, { graceMs: roomConfig.graceMs ?? 30000, ...privateConfig });
   }
   attach(session, peer) {
     const old = this.peers.get(session.id);
@@ -27,6 +29,7 @@ export class Lobby {
     if (old && old !== peer) old.close(4001, 'session_replaced');
     const entry = this.entries.get(session.id);
     if (entry?.room) entry.room.reconnect(session.id);
+    else if (entry?.privateGroup) this.privateRooms.attach(session);
     else peer.send({ type: 'connected', player: this.sessions.public(session), region: this.region, ranked: this.sessions.configured });
   }
   detach(session, peer) {
@@ -34,6 +37,7 @@ export class Lobby {
     this.peers.delete(session.id);
     const entry = this.entries.get(session.id);
     if (entry?.room) entry.room.disconnect(session.id);
+    else if (entry?.privateGroup) this.privateRooms.detach(session);
     else { this.entries.delete(session.id); session.active = false; }
   }
   async join(session, { mode, size, visual, request, region }) {
@@ -60,7 +64,8 @@ export class Lobby {
       if (entry.room) {
         if (!entry.room.active) { entry.room.cancel('search_cancelled'); this.releaseRoom(entry.room); }
         else throw new PublicError('match_already_started');
-      } else this.entries.delete(session.id);
+      } else if (entry.privateGroup) this.privateRooms.leave(session);
+      else this.entries.delete(session.id);
     }
     this.peers.get(session.id)?.send({ type: 'search_cancelled', request });
   }
@@ -71,7 +76,8 @@ export class Lobby {
       if (room.result) { room.resultLeavers.add(session.id); this.entries.delete(session.id); session.active = this.peers.has(session.id); }
       else if (!room.active) { room.cancel('player_left_before_kickoff'); this.releaseRoom(room); }
       else { room.disconnect(session.id, performance.now(), true); this.peers.get(session.id)?.send({ type: 'left_match', pendingResult: true }); }
-    } else this.entries.delete(session.id);
+    } else if (entry?.privateGroup) this.privateRooms.leave(session);
+    else this.entries.delete(session.id);
   }
   roomFor(session, matchId) {
     const room = this.entries.get(session.id)?.room;
@@ -109,10 +115,11 @@ export class Lobby {
     // finishes. Match locks are independent from the room's object lifetime.
     if (room.result && !room.busy) { this.rooms.delete(room.id); room.dispose(); }
   }
-  update(now) { for (const room of this.rooms.values()) room.checkLifecycle(now); }
+  update(now) { this.privateRooms.update(now); for (const room of this.rooms.values()) room.checkLifecycle(now); }
   step(now) { for (const room of this.rooms.values()) room.step(now); }
   shutdown(reason = 'server_restart') {
     this.stopping = true;
+    this.privateRooms.shutdown(reason);
     for (const room of this.rooms.values()) if (!room.terminal) room.cancel(reason);
     for (const [id, entry] of this.entries) if (!entry.room) { this.peers.get(id)?.send({ type: 'cancelled', reason, rated: false }); this.entries.delete(id); }
   }

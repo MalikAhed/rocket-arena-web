@@ -89,6 +89,25 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
       assert.equal((await store.finalize(room.id, outcome(room))).status, 'cancelled');
       assert.deepEqual(await store.ratingFor(players[0].accountId, 1, 'ranked'), before);
     });
+    await t.test('private Casual completion changes no public ratings or placements', async () => {
+      const room = await reserve(1, { private: true, mode: 'casual' });
+      const before = await store.getProfile(players[0].accountId);
+      const casualBefore = await store.ratingFor(players[0].accountId, 1, 'casual');
+      await store.queueResult(room.id, outcome(room));
+      assert.deepEqual((await store.finalize(room.id, outcome(room))).changes, []);
+      assert.deepEqual(await store.getProfile(players[0].accountId), before);
+      assert.deepEqual(await store.ratingFor(players[0].accountId, 1, 'casual'), casualBefore);
+    });
+    await t.test('staged outcomes are immutable; cancellation and concurrent retries preserve them', async () => {
+      const room = await reserve(2);
+      const before = await store.ratingFor(players[0].accountId, 2, 'ranked');
+      await store.queueResult(room.id, outcome(room));
+      await store.queueResult(room.id, outcome(room, { winner: 1 }));
+      const results = await Promise.all([store.finalize(room.id, outcome(room, { winner: 1 })), store.cancel(room.id, 'server_restart')]);
+      results.forEach(result => { assert.equal(result.status, 'completed'); assert.equal(result.winner, 0); });
+      assert.equal((await store.ratingFor(players[0].accountId, 2, 'ranked')).games, before.games + 1);
+      assert.equal((await store.pool.query('SELECT count(*)::integer AS n FROM arena.pending_results WHERE match_id=$1', [room.id])).rows[0].n, 0);
+    });
     await t.test('server verifies provider identity, rejects anonymous users, and retains accounts', async () => {
       const fixture = players[4], accessToken = 'in-process-fixture-only-not-a-real-token';
       let calls = 0, bad = false;
@@ -101,12 +120,13 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
       bad = true; await assert.rejects(sessions.requireRanked(sessions.get(issued.token)), error => error.code === 'sign_in_required');
       assert.equal(sessions.get('invalid'), null);
     });
-    await t.test('lease excludes a second server; interrupted matches become no-contest on restart', async () => {
+    await t.test('lease excludes a second server; staged outcomes recover and unfinished games become no-contest', async () => {
       const second = new Store({ ...options, serverId: randomUUID() });
       try { await assert.rejects(second.init(), /lease/); } finally { await second.close(); }
       const room = await reserve();
-      const queued = await reserve(1, { players: players.slice(4, 6) });
-      await store.queueResult(queued.id, outcome(queued));
+      const stagedRoom = await reserve(3), beforeStaged = await store.ratingFor(players[0].accountId, 3, 'ranked');
+      await store.queueResult(stagedRoom.id, outcome(stagedRoom));
+      assert.equal((await store.pool.query('SELECT status FROM arena.matches WHERE id=$1', [stagedRoom.id])).rows[0].status, 'active');
       const app = await createGameServer(configuration({ PORT: '0', DATABASE_URL: options.connectionString, SEASON_ID: options.season }));
       try {
         const origin = `http://127.0.0.1:${app.port}`;
@@ -117,13 +137,15 @@ test('PostgreSQL: atomic ratings, duplicate results, playlist isolation, recover
         assert.equal(admission.status, 503);
         await store.close();
         assert.equal(await app.initialization, true);
+        assert.equal(app.store.recoveredResults, 1);
         assert.equal((await fetch(origin + '/readyz')).status, 200);
         assert.equal((await app.store.pool.query('SELECT status FROM arena.matches WHERE id=$1', [room.id])).rows[0].status, 'cancelled');
         assert.equal((await app.store.getProfile(players[0].accountId)).progress[0].games, 2);
-        assert.equal((await app.store.getProfile(players[4].accountId)).progress[0].games, 1);
-        assert.equal(app.store.recoveredResults, 1);
-        const recovered = (await app.store.pool.query('SELECT result FROM arena.matches WHERE id=$1', [queued.id])).rows[0].result;
-        assert.equal(recovered.status, 'completed'); assert.equal(recovered.winner, 0);
+        assert.equal((await app.store.pool.query('SELECT status FROM arena.matches WHERE id=$1', [stagedRoom.id])).rows[0].status, 'completed');
+        assert.equal((await app.store.ratingFor(players[0].accountId, 3, 'ranked')).games, beforeStaged.games + 1);
+        const replayed = await app.store.finalize(stagedRoom.id, outcome(stagedRoom, { winner: 1 }));
+        assert.equal(replayed.winner, 0);
+        assert.equal((await app.store.ratingFor(players[0].accountId, 3, 'ranked')).games, beforeStaged.games + 1);
         assert.equal((await app.store.pool.query('SELECT count(*)::integer AS n FROM arena.pending_results')).rows[0].n, 0);
       } finally { await app.close(); }
     });

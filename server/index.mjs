@@ -20,7 +20,7 @@ export async function createGameServer(config = configuration(), dependencies = 
   const store = dependencies.store ?? (config.databaseUrl ? new Store({ connectionString: config.databaseUrl, ssl: config.ssl, season: config.season,
     rating: config.rating, serverId: config.serverId, onLeaseLost: () => lobby?.shutdown('database_lease_lost') }) : null);
   const sessions = dependencies.sessions ?? new Sessions({ supabaseUrl: config.supabaseUrl, publicKey: config.publicKey, store });
-  lobby = new Lobby({ sessions, store, region: config.region, maxRooms: config.maxRooms, roomConfig: config.roomConfig });
+  lobby = new Lobby({ sessions, store, region: config.region, maxRooms: config.maxRooms, roomConfig: config.roomConfig, privateConfig: config.privateConfig });
   lobby.initializing = !!store && !dependencies.store;
   const rates = new BoundedRates(), peers = new Set();
   const metrics = { ticks: 0, stalls: 0, maxStepMs: 0, sentBytes: 0, started: Date.now() };
@@ -115,6 +115,10 @@ export async function createGameServer(config = configuration(), dependencies = 
         }
         if (lobby.peers.get(peer.session.id) !== peer) throw new PublicError('session_replaced');
         if (message.type === 'queue') await lobby.join(peer.session, message);
+        else if (message.type === 'private_create') lobby.privateRooms.create(peer.session, message);
+        else if (message.type === 'private_join') lobby.privateRooms.join(peer.session, message);
+        else if (message.type === 'private_team') lobby.privateRooms.team(peer.session, message.team);
+        else if (message.type === 'private_start') lobby.privateRooms.start(peer.session);
         else if (message.type === 'cancel') lobby.cancel(peer.session, message.request);
         else if (message.type === 'ready') await lobby.roomFor(peer.session, message.matchId).markReady(peer.session.id);
         else if (message.type === 'leave') lobby.leave(peer.session);

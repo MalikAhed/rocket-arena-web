@@ -53,3 +53,15 @@
 @media(max-height:620px) { #app .arena-play__grid { top:17%;left:15%;right:15%;gap:10px;max-width:760px; } #app .arena-mode { aspect-ratio:2.4; } #app .online-dialog { padding:18px; } #app .online-playlist img { max-height:135px; } }
 @media(max-width:640px) { #app .arena-play__grid { left:5%;right:5%;top:23%; } #app .arena-mode { aspect-ratio:1.25; } #app .arena-mode strong { font-size:18px; } #app .arena-mode small { line-height:1.4; } #app .online-panel { padding:10px; } #app .online-dialog { padding:18px;max-height:calc(100dvh - 20px); } #app .online-playlists { gap:8px; } #app .online-playlist strong { font-size:23px; } #app .online-playlist img { aspect-ratio:1.15; } #app .online-account-row { display:block; } #app .online-identity { padding-top:10px; } #app .online-dialog h1 { font-size:28px; } #app .online-actions button { flex:1 1 130px; } #app .online-roster { top:70px; } }
 @media(prefers-reduced-motion:reduce) { #app .online-dialog button { transition:none; } }
+
+#app .online-private-options { display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:0 0 18px;padding:16px 0;border-block:1px solid #326484; }
+#app .online-private-options .online-name { flex:1 1 160px;max-width:250px; }
+#app [name="inviteCode"],#app [data-invite-code] { font-family:monospace;letter-spacing:.14em;text-transform:uppercase; }
+#app .online-private-lobby { padding:16px;border:1px solid #477f9d;border-radius:8px;margin:16px 0; }
+#app .online-invite { display:flex;align-items:center;flex-wrap:wrap;gap:12px; }
+#app .online-invite > span { color:#a9cde1;font-size:11px; }
+#app [data-invite-code] { font-size:28px;user-select:all;color:#93e8ff; }
+#app .online-private-roster { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:18px 0; }
+#app .online-private-roster p { margin:0;padding:10px;background:#061b2d;border-left:3px solid #40beff;overflow-wrap:anywhere;font-size:13px; }
+#app .online-private-roster .orange-team { border-color:#ffae63; }
+@media(max-width:640px) { #app .online-private-options button { flex:1 1 140px; } #app .online-private-roster { grid-template-columns:1fr; } #app [data-invite-code] { font-size:24px; } }

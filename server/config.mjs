@@ -26,6 +26,7 @@ export function configuration(env = process.env) {
     supabaseUrl, publicKey: env.SUPABASE_PUBLISHABLE_KEY ?? '', databaseUrl: env.DATABASE_URL ?? '',
     ssl: env.DATABASE_SSL === 'verify-full' ? { rejectUnauthorized: true, ...(env.DATABASE_CA_FILE ? { ca: readFileSync(env.DATABASE_CA_FILE, 'utf8') } : {}) } : undefined,
     season: env.SEASON_ID ?? 'beta-1', rating,
+    privateConfig: { maxLobbies: number(env, 'MAX_PRIVATE_LOBBIES', 16, 1, 64), ttlMs: number(env, 'PRIVATE_LOBBY_TTL_SECONDS', 600, 60, 3600) * 1000 },
     roomConfig: { graceMs: number(env, 'RECONNECT_GRACE_SECONDS', 30, 5, 120) * 1000 },
   };
 }

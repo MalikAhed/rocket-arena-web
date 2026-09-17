@@ -107,6 +107,57 @@ try {
     for (const player of current) await player.page.locator('[data-online="back"]').click();
     await until(() => app.lobby.rooms.size === 0);
   }
+  // Private room: real UI, independent contexts and native match; no account bypass.
+  const privatePlayers = players.slice(0, 2);
+  for (const player of privatePlayers) {
+    await player.page.locator('[data-home="play"]').click(); await player.page.locator('[data-home="casual"]').click();
+    await player.page.locator('.online-status').filter({ hasText: /Choose a playlist/ }).waitFor();
+    await player.page.locator('[data-size="1"]').click();
+  }
+  let readinessCalls = 0;
+  await primary.page.route(host + '/readyz', async route => {
+    if (++readinessCalls <= 2) await route.fulfill({ status: 503, contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': 'http://127.0.0.1:4173' }, body: '<html>Simulated provider cold start</html>' });
+    else await route.continue();
+  });
+  await primary.page.locator('[data-online="create-private"]').click();
+  await primary.page.locator('.online-private-lobby:not([hidden])').waitFor();
+  assert(readinessCalls >= 3); await primary.page.unroute(host + '/readyz');
+  const inviteCode = await primary.page.locator('[data-invite-code]').textContent();
+  assert(await primary.page.locator('[data-online="start-private"]').isDisabled());
+  await primary.page.screenshot({ path: `${out}/private-room-waiting.png` });
+  await primary.page.reload({ waitUntil: 'domcontentloaded' });
+  await primary.page.locator('.online-private-lobby:not([hidden])').waitFor({ timeout: 90000 });
+  assert.equal(await primary.page.locator('[data-invite-code]').textContent(), inviteCode);
+  const friend = privatePlayers[1];
+  await friend.page.locator('[name="inviteCode"]').fill(inviteCode.toLowerCase());
+  await friend.page.locator('[data-online="join-private"]').click();
+  await friend.page.locator('.online-private-lobby:not([hidden])').waitFor();
+  await until(async () => await primary.page.locator('[data-online="start-private"]').isEnabled());
+  assert(await friend.page.locator('[data-online="start-private"]').isHidden());
+  await primary.page.screenshot({ path: `${out}/private-room-ready.png` });
+  await primary.page.setViewportSize({ width: 390, height: 844 });
+  await primary.page.screenshot({ path: `${out}/private-room-mobile.png` });
+  assert(await primary.page.locator('.online-dialog').evaluate(e => e.scrollWidth <= e.clientWidth));
+  await primary.page.setViewportSize({ width: 1280, height: 720 });
+  await primary.page.locator('[data-online="start-private"]').click();
+  for (const player of privatePlayers) await player.page.waitForFunction(() => window.rocketArenaOnline?.snapshot().phase === 'playing', null, { timeout: 90000 });
+  const privateState = await primary.page.evaluate(() => window.rocketArenaOnline.snapshot());
+  assert(privateState.privateRoom);
+  const privateRoom = app.lobby.rooms.get(privateState.matchId); assert(privateRoom.private);
+  // Abrupt socket loss without page refresh: the client must retry its same slot.
+  const hostIdentity = privateRoom.players[privateState.self].id;
+  app.lobby.peers.get(hostIdentity).ws.terminate();
+  await until(async () => {
+    const state = await primary.page.evaluate(() => window.rocketArenaOnline.snapshot());
+    return state.connected && state.matchId === privateState.matchId && state.self === privateState.self && state.tick > privateState.tick + 90;
+  });
+  await primary.page.locator('[data-forfeit]').click();
+  for (const player of privatePlayers) await player.page.locator('.online-results').filter({ hasText: /Private match/ }).waitFor();
+  await primary.page.screenshot({ path: `${out}/private-room-result.png` });
+  checks.push('Private 1v1 UI: host code, lower-case join, waiting-lobby refresh, host-only start, shared native match, abrupt socket reconnect, unrated result; desktop/mobile views');
+  checks.push('Simulated Render-style HTML 503 cold start retries and reaches a ready server');
+  for (const player of privatePlayers) await player.page.locator('[data-online="back"]').click();
+  await until(() => app.lobby.rooms.size === 0);
   const gallery = await browser.newPage({ viewport: { width: 1100, height: 850 } }); pages.push(gallery);
   await gallery.goto('http://127.0.0.1:4173/');
   await gallery.setContent(`<body style="margin:0;background:#071c31;color:white;font:16px Arial;padding:30px"><h1>Original rank badge family</h1><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px">${Array.from({ length: 23 }, (_, i) => `<figure style="margin:0;text-align:center"><img style="width:125px;height:125px" src="http://127.0.0.1:4173/assets/online/ranks.svg#rank-${i}"><figcaption>${i ? `Tier ${i}` : 'Unranked'}</figcaption></figure>`).join('')}</div></body>`);

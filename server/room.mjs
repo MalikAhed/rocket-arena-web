@@ -33,7 +33,7 @@ export class Room {
   admit(id) {
     const slot = this.slots.findIndex(p => p.id === id);
     if (slot < 0 || !this.arena) return;
-    this.send(id, { type: 'reserved', matchId: this.id, mode: this.mode, size: this.size, region: this.region,
+    this.send(id, { type: 'reserved', matchId: this.id, mode: this.mode, size: this.size, region: this.region, private: this.private,
       protocol: PROTOCOL, physics: PHYSICS_SHA256, roster: this.publicRoster(), configs: this.arena.configs,
       self: slot, ack: this.slots[slot].ack, graceMs: this.config.graceMs, reconnect: this.active || this.terminal });
     this.sendSnapshot(id);
