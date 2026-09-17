@@ -1,0 +1,49 @@
+name: Online play verification
+
+on:
+  push:
+    branches: [online-play]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: online-play-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify protected assets
+        run: npm run verify
+      - name: Existing bot regression tests
+        run: npm test
+      - name: Build static frontend without deploying
+        run: npm run build
+        env:
+          ROCKET_ARENA_BASE_PATH: /rocket-arena-web
+      - name: Package reproducible inspection workspace
+        if: always()
+        run: |
+          git ls-files > tracked-files.txt
+          tar -czf "$RUNNER_TEMP/rocket-inspection.tgz" src public tools node_modules package.json package-lock.json index.html README.md SOURCE.md VALIDATION.md asset-report.json tracked-files.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rocket-inspection-${{ github.sha }}
+          path: ${{ runner.temp }}/rocket-inspection.tgz
+          retention-days: 1
+          if-no-files-found: error
