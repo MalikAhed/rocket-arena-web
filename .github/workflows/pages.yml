@@ -42,8 +42,8 @@ jobs:
         env:
           ROCKET_ARENA_BASE_PATH: /rocket-arena-web
           ONLINE_SERVER_URL: ${{ vars.ONLINE_SERVER_URL || 'https://rocket-arena-online-beta.onrender.com' }}
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://xtfiihanffkzualgcjpi.supabase.co' }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_glhW0wBiCzWFBDCu18-Idg_IR5hNVp-' }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -69,6 +69,38 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify actual Pages build and private two-client Internet match
         run: node tools/check-live-release.mjs
+        env:
+          LIVE_SITE_URL: ${{ needs.deploy.outputs.page_url }}
+      - name: Inspect Supabase wiring and report remaining Ranked blockers
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { mkdir, writeFile } from 'node:fs/promises';
+          const site = new URL(process.env.LIVE_SITE_URL);
+          assert.equal(site.origin, 'https://malikahed.github.io');
+          const configResponse = await fetch(new URL('assets/online/config.json', site), { signal: AbortSignal.timeout(15000), cache: 'no-store' });
+          assert(configResponse.ok, 'Published configuration must load');
+          const config = await configResponse.json();
+          assert.match(config.supabaseUrl || '', /^https:\/\/[a-z0-9-]+\.supabase\.co$/);
+          assert.match(config.publishableKey || '', /^sb_publishable_/);
+          const settingsResponse = await fetch(`${config.supabaseUrl}/auth/v1/settings`, { headers: { apikey: config.publishableKey }, signal: AbortSignal.timeout(15000) });
+          assert.equal(settingsResponse.status, 200, 'Supabase must accept the published public key');
+          const settings = await settingsResponse.json();
+          const readyResponse = await fetch(`${config.serverUrl}/readyz`, { headers: { Origin: site.origin }, signal: AbortSignal.timeout(15000) });
+          assert.equal(readyResponse.status, 200, 'Guest backend readiness must remain healthy');
+          const health = await readyResponse.json();
+          const githubEnabled = settings.external?.github === true;
+          const blockers = [];
+          if (!githubEnabled) blockers.push('Enable GitHub OAuth in Supabase and configure its client credentials and allowed redirect URLs.');
+          if (!health.ranked) blockers.push('Backend account verification and durable database storage are not ready; check its private DATABASE_URL configuration.');
+          const report = { checkedAt: new Date().toISOString(), projectUrl: config.supabaseUrl, frontendBuild: config.build,
+            backendBuild: health.build, publicKeyAccepted: true, githubEnabled, backendRankedAvailable: health.ranked === true,
+            signInTested: false, rankedMatchTested: false, blockers,
+            acceptance: 'Public configuration only. No account sign-in or Ranked match is certified by this check.' };
+          await mkdir('evidence/live-release', { recursive: true });
+          await writeFile('evidence/live-release/account-readiness.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report));
+          NODE
         env:
           LIVE_SITE_URL: ${{ needs.deploy.outputs.page_url }}
       - uses: actions/upload-artifact@v4
