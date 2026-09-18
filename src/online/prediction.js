@@ -143,7 +143,7 @@ export class Prediction {
         const hidden = historical ? acknowledged?.hidden?.[meta.ticks - 1] : null;
         const hiddenAgrees = !snapshot.checkpoint || this.nativeCheckpoints && hiddenStateAgrees(hidden, snapshot.checkpoint, self)
           && historical && Math.abs(historical[L.CARS+C.BOOST]-state[L.CARS+C.BOOST]) < .1 && historical[L.CARS+C.IS_BOOSTING] === state[L.CARS+C.IS_BOOSTING];
-        const agrees = !reset && !resync && playing && !meta.idle && this.agrees(historical, state) && hiddenAgrees;
+        const agrees = !reset && !resync && !lifecycleChanged && playing && !meta.idle && this.agrees(historical, state) && hiddenAgrees;
         this.seq = Math.max(this.seq, meta.seq);
         this.epoch = snapshot.epoch;
         if (reset || !playing) {

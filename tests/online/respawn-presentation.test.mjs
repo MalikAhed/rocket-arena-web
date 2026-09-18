@@ -71,3 +71,33 @@ test('native random respawn stays invisible until confirmed; the camera never fo
     assert.equal(prediction.localVisual.hardSnaps, 0, 'confirmed spawn is a lifecycle transition, not an unexplained correction');
   } finally { prediction?.dispose(); arena.dispose(); }
 });
+
+test('matching predicted respawn still clears old render correction when the server confirms it', async () => {
+  const arena = await NativeArena.create([{ team: 0, visual: 'fennec' }, { team: 1, visual: 'fennec' }]);
+  let prediction;
+  try {
+    const state = arena.state.slice(), hidden = arena.checkpoint.slice();
+    state[L.CARS + C.DEMOED] = 1; hidden[24 + 29] = .0125;
+    restoreFixture(arena, state, hidden);
+    const sim = { module: arena.module, get state() { return arena.state; },
+      setControls(i, controls) { arena.input(i, controlsArray(controls)); }, step(n) { arena.module._physics_step(n); } };
+    prediction = new Prediction(sim, [0, 1]);
+    const clock = { prevState: state.slice(), currState: state.slice() };
+    prediction.receive(snapshot(arena, 1), 0, 0);
+    for (let frame = 0; frame < 6; frame++) prediction.update(frame * 1000 / 60, NEUTRAL, () => {}, clock, true);
+    assert.equal(arena.state[L.CARS + C.DEMOED], 0);
+    const packet = prediction.pending.at(-1);
+    // Server and client happen to choose the same spawn. Their ACK-aligned
+    // history agrees; lifecycle confirmation must STILL discard an old offset.
+    const confirmed = decodeSnapshot(encodeSnapshot({ tick: 20, epoch: 1, state: arena.state, checkpoint: arena.checkpoint,
+      inputStates: [{ seq: packet.seq, ticks: packet.ticks, queued: 0, idle: 0, controls: packet.controls },
+        { seq: 0, ticks: 2, queued: 0, idle: 0, controls: NEUTRAL }], match }));
+    assert(prediction.agrees(packet.states[packet.ticks - 1], confirmed.state));
+    prediction.localVisual.position[0] = 100;
+    const previousRestores = prediction.checkpointRestores;
+    prediction.receive(confirmed, 0, 100); prediction.update(100, NEUTRAL, () => {}, clock, true);
+    assert.equal(prediction.checkpointRestores, previousRestores + 1);
+    assert.equal(Math.hypot(...prediction.localVisual.position), 0);
+    assert.equal(clock.currState[L.CARS + C.DEMOED], 0);
+  } finally { prediction?.dispose(); arena.dispose(); }
+});
