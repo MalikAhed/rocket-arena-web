@@ -1,0 +1,42 @@
+name: Live deployment acceptance
+
+on:
+  push:
+    branches: [deployment-acceptance-2026-09-18]
+    paths:
+      - tools/check-live-modes.mjs
+      - .github/workflows/live-deployment-acceptance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-deployment-acceptance
+  cancel-in-progress: false
+
+jobs:
+  live_modes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node --check tools/check-live-modes.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Verify deployed Pages plus Render in private 1v1, 2v2, and 3v3
+        run: node tools/check-live-modes.mjs
+        env:
+          LIVE_EXPECTED_BUILD: 5ebdfcabc99d7f7a9d73b71170d3e6d6def765d4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-modes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/live-modes
+          retention-days: 14
