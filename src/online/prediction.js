@@ -4,6 +4,7 @@ import { CHECKPOINT_HEADER, CHECKPOINT_CAR, hiddenStateAgrees } from './checkpoi
 import { TimingWindow } from './timing.js';
 import { SnapshotBuffer } from './snapshot-buffer.js';
 import { copyConfirmedEvents } from './presentation-events.js';
+import { applyConfirmedLifecycle } from './presentation-lifecycle.js';
 import { clamp, distance, interpolateBody, VisualCorrection } from './pose.js';
 const DT = 1000 / SIM_HZ, COMMAND_TICKS = SIM_HZ / INPUT_HZ, MAX_PENDING = 60, MAX_REPLAY_TICKS = 120;
 // This ABI still lacks a full rollback serializer. Compare ACK-aligned history
@@ -55,6 +56,7 @@ export class Prediction {
         this.wasPlaying = false;
         this.resynchronizations = 0;
         this.needsResync = false;
+        this.authoritativeDemoed = null; this.lifecycleChanges = 0;
     }
     recordHidden(packet, tick) {
         if (!this.nativeCheckpoints) return;
@@ -126,6 +128,10 @@ export class Prediction {
         const { snapshot, state, self } = this.queuedSnapshot;
         this.queuedSnapshot = null;
         const reset = snapshot.epoch !== this.epoch, playing = snapshot.match.phase === 'playing';
+        const demoed = state[L.CARS + C.DEMOED] === 1;
+        const lifecycleChanged = this.authoritativeDemoed !== null && this.authoritativeDemoed !== demoed;
+        if (lifecycleChanged) this.lifecycleChanges++;
+        this.authoritativeDemoed = demoed;
         const resync = this.needsResync;
         this.needsResync = false;
         if (resync)
@@ -178,7 +184,7 @@ export class Prediction {
             this.error = distance(before, this.curr, L.CARS);
             if (!reset && this.error > .5)
                 this.corrections++;
-            const teleport = reset || !playing || before[L.CARS + C.DEMOED] !== this.curr[L.CARS + C.DEMOED];
+            const teleport = reset || !playing || lifecycleChanged || before[L.CARS + C.DEMOED] !== this.curr[L.CARS + C.DEMOED];
             this.localVisual.rebase(before, this.curr, teleport);
             this.ballVisual.rebase(before, this.curr, reset || !playing);
         }
@@ -247,7 +253,7 @@ export class Prediction {
             // Predict nearby ball contact with the same simulation as the local car.
             // Far-away ball remains on the stable snapshot timeline; crossfade avoids a jump.
             const separation = Math.hypot(...[0, 1, 2].map(i => this.curr[L.CARS + i] - this.curr[L.BALL + i]));
-            const target = clamp((900 - separation) / 400, 0, 1);
+            const target = this.authoritativeDemoed ? 0 : clamp((900 - separation) / 400, 0, 1);
             this.ballWeight += (target - this.ballWeight) * (1 - Math.exp(-Math.min(renderElapsed, 100) / 65));
             const ball = this.ballScratch; ball.set(this.curr);
             interpolateBody(ball, this.prev, this.curr, L.BALL, alpha, DT / 1000, false);
@@ -264,6 +270,7 @@ export class Prediction {
             this.ballVisual.reset();
             this.ballWeight = 0;
         }
+        applyConfirmedLifecycle(this.rendered, this.latest.state, this.order[0]);
         copyConfirmedEvents(this.rendered, this.latest.state, this.order[0]);
         this.wasPlaying = playing;
         clock.prevState.set(this.rendered);
@@ -283,6 +290,6 @@ export class Prediction {
         this.averageQueue = 3;
         this.timeline.clear();
     }
-    metrics() { return { protocol: 2, nativeCheckpoint: +this.nativeCheckpoints, checkpointRestores: this.checkpointRestores, hiddenHistoryBytes: this.nativeCheckpoints ? this.packetPool.length * 2 * CHECKPOINT_CAR * 4 : 0, frameTiming: this.frameTiming.summary(), predictionWork: this.updateTiming.summary(), historyBytes: this.packetPool.length * 2 * this.curr.byteLength, playbackRebases: this.timeline.rebases, playbackAgeMs: this.timeline.ageMs, resynchronizations: this.resynchronizations, predictionPaused: !this.wasPlaying, simulatedTicks: this.simulatedTicks, droppedTicks: this.droppedTicks, corrections: this.corrections, skippedRestores: this.skippedRestores, correctionUnits: this.error, visualOffsetUnits: Math.hypot(...this.localVisual.position), hardSnaps: this.localVisual.hardSnaps, jitterMs: this.timeline.jitterMs, interpolationMs: this.timeline.delayMs, interpolationUnderruns: this.timeline.underflows, inputQueueTicks: this.averageQueue, inputTimeScale: this.rate, maxReplayTicks: this.maxReplayTicks }; }
+    metrics() { return { protocol: 2, nativeCheckpoint: +this.nativeCheckpoints, authoritativeLifecycleChanges: this.lifecycleChanges, checkpointRestores: this.checkpointRestores, hiddenHistoryBytes: this.nativeCheckpoints ? this.packetPool.length * 2 * CHECKPOINT_CAR * 4 : 0, frameTiming: this.frameTiming.summary(), predictionWork: this.updateTiming.summary(), historyBytes: this.packetPool.length * 2 * this.curr.byteLength, playbackRebases: this.timeline.rebases, playbackAgeMs: this.timeline.ageMs, resynchronizations: this.resynchronizations, predictionPaused: !this.wasPlaying, simulatedTicks: this.simulatedTicks, droppedTicks: this.droppedTicks, corrections: this.corrections, skippedRestores: this.skippedRestores, correctionUnits: this.error, visualOffsetUnits: Math.hypot(...this.localVisual.position), hardSnaps: this.localVisual.hardSnaps, jitterMs: this.timeline.jitterMs, interpolationMs: this.timeline.delayMs, interpolationUnderruns: this.timeline.underflows, inputQueueTicks: this.averageQueue, inputTimeScale: this.rate, maxReplayTicks: this.maxReplayTicks }; }
     dispose() { this.sim.module._free(this.pointer); this.pending.length = 0; this.timeline.clear(); this.latest = this.queuedSnapshot = null; this.packetPool.length = 0; }
 }

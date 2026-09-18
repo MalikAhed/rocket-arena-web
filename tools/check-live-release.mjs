@@ -4,6 +4,8 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { PROTOCOL } from '../src/online/protocol.js';
+import { NETWORK_CORE_SHA256 } from '../src/physics/network-core.js';
+import { inspectLiveReadiness } from './live-readiness.mjs';
 const site = new URL(process.env.LIVE_SITE_URL || 'https://malikahed.github.io/rocket-arena-web/');
 assert.equal(site.origin, 'https://malikahed.github.io');
 assert.equal(site.pathname, '/rocket-arena-web/');
@@ -52,19 +54,22 @@ try {
   await a.page.locator('[data-online="back"]').click();
   await a.page.locator('[data-home="play"]').click();
   report.checks.push('Deployed Pages loads the four-mode menu and honest Ranked account gate');
-  let health;
-  for (let attempt = 0; attempt < 18; attempt++) {
-    const response = await fetch(config.serverUrl + '/readyz', { headers: { Origin: site.origin }, signal: AbortSignal.timeout(10000) });
-    health = await response.json().catch(() => ({}));
-    report.backend = { status: response.status, allowOrigin: response.headers.get('access-control-allow-origin'),
-      protocol: health.protocol, ready: health.ready, ranked: health.ranked, build: health.build };
-    if (response.status === 403) throw Error('Backend rejects the GitHub Pages origin. Deploy the approved-origin backend fix; do not bypass CORS in the client.');
-    if (response.ok && health.ready) break;
-    await sleep(3000);
-  }
-  assert.equal(health?.ready, true, 'Backend did not become ready within the bounded cold-start check');
+  report.readinessAttempts = [];
+  const { health, response: backendResponse } = await inspectLiveReadiness(config.serverUrl, site.origin, {
+    timeoutMs: 90000,
+    onAttempt: attempt => {
+      // Retain a bounded, secret-free explanation even when the operation fails.
+      if (report.readinessAttempts.length < 64) report.readinessAttempts.push(attempt);
+      report.backend = attempt;
+    },
+  });
+  report.backend = { ...backendResponse, protocol: health.protocol, ready: health.ready,
+    ranked: health.ranked, build: health.build, nativeCheckpoint: health.nativeCheckpoint,
+    nativePhysics: health.nativePhysics };
   assert.equal(health.protocol, PROTOCOL, 'Frontend/backend protocol mismatch');
-  assert.equal(report.backend.allowOrigin, site.origin, 'Backend must allow the exact Pages origin');
+  assert.equal(backendResponse.allowOrigin, site.origin, 'Backend must allow the exact Pages origin');
+  assert.equal(health.nativeCheckpoint, 1, 'Backend still lacks the deployed native checkpoint fix');
+  assert.equal(health.nativePhysics, NETWORK_CORE_SHA256, 'Backend native physics does not match this frontend');
   report.checks.push('Live backend is ready with compatible protocol and exact Pages CORS');
   const b = await player('Release Check Two');
   for (const p of [a,b]) {
@@ -88,6 +93,7 @@ try {
   assert.equal(states[0].matchId, states[1].matchId); assert.notEqual(states[0].self, states[1].self);
   report.clients = states.map(s => ({ self:s.self, tick:s.tick, inputSequence:s.inputSequence, netcode:s.netcode, serverTiming:s.serverTiming }));
   assert(states[0].inputSequence > 0);
+  assert(states.every(s => s.netcode?.nativeCheckpoint === 1 && s.netcode.checkpointRestores > 0), 'Each live client must actually restore native checkpoints');
   await a.page.screenshot({ path: `${directory}/main-private-gameplay.png` });
   await a.page.locator('[data-forfeit]').click();
   for (const p of [a,b]) await p.page.locator('.online-results').filter({ hasText: /Private match/ }).waitFor();
