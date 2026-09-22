@@ -1,5 +1,9 @@
 # Rocket Arena — online play
 
+## Play the game
+
+**[Launch Rocket Arena on GitHub Pages](https://malikahed.github.io/rocket-arena-web/)**
+
 The existing game includes authoritative Casual 1v1/2v2/3v3, account-gated Ranked, private Casual rooms, and separate offline Bots and Free Play. Malik approved publishing this version to the existing main GitHub Pages site on 2026-09-17. **This is still a beta, not a zero-stutter or competitive-reliability certification.**
 
 The previous offline edition is preserved on `offline-stable-2026-09-17` at `0a3571fcc0a752c7e479a5933ecc8a6bcc568598`. Do not delete that rollback branch or force-push main.
