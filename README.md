@@ -6,26 +6,40 @@ The previous offline edition is preserved on `offline-stable-2026-09-17` at `0a3
 
 ## Local guest Casual
 
-Node 22+ and npm are required:
+Node 22+ and npm are required. A fresh clone checks out the current default
+branch, `main`; the `online-play` branch is not required for local play:
 
 ```sh
 git clone https://github.com/MalikAhed/rocket-arena-web.git
 cd rocket-arena-web
-git switch online-play
 npm ci
 cp .env.example .env
 npm run server
 ```
 
-In a second terminal:
+Keep that backend terminal running. In a second terminal, from the same repository:
 
 ```sh
 PORT=4173 npm start
 ```
 
+The frontend runs on port 4173 and reads the backend URL from `.env`. On Windows
+PowerShell, use `$env:PORT = '4173'; npm start` instead of the shell assignment
+above. `cp .env.example .env` is a first-time setup step; do not overwrite an
+existing configured `.env`.
+
 Open `http://127.0.0.1:4173/` in independent browser profiles. Casual requires 2, 4 or 6 ready human participants. Private Casual has create/join codes and host-only start. Neither queue silently adds bots. Stop the backend and Bots/Free Play remain accessible.
 
 Without `.env`, use `PORT=8080 npm run server` and separately `ONLINE_SERVER_URL=http://127.0.0.1:8080 PORT=4173 ROCKET_ARENA_LIVE_RELOAD=0 npm start`.
+
+## Offline-only development
+
+After `npm ci`, run `PORT=4173 npm start` (PowerShell: set `$env:PORT = '4173'`
+first) and open `http://127.0.0.1:4173/`. The explicit frontend port also avoids
+using the backend port from a copied `.env.example`.
+Bots and Free Play do not require a running game backend, accounts, or a database.
+Online modes still need the separate backend described above. Use `main` for the
+current code; `offline-stable-2026-09-17` remains a historical rollback reference.
 
 ## Accounts and durable Ranked
 
