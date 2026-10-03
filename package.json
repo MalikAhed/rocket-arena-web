@@ -17,5 +17,6 @@
   },
   "devDependencies": { "esbuild": "0.25.12", "playwright": "1.63.0" },
   "engines": { "node": ">=22" },
-  "dependencies": { "@supabase/supabase-js": "2.116.0", "pg": "8.23.0", "ws": "8.21.3" }
+  "dependencies": { "@supabase/supabase-js": "2.116.0", "pg": "8.23.0", "ws": "8.21.3" },
+  "license": "MIT"
 }

@@ -65,3 +65,13 @@ A post-deploy check attempts a real private two-browser Internet match from Page
 The native physics binary, handling constants, collision geometry, camera implementation, car/arena assets, lighting/shaders and product graphics presets are preserved. There is a narrow rendering-scheduler callback for online input maintenance; it does not redefine Potato or run offline connections. Full native internal-state rollback is not yet exposed by the shipped ABI.
 
 Existing component notices remain in `SOURCE.md`, `public/licenses/` and asset credits. This contribution grants no new blanket rights over inherited material. Original optimization notes are retained in [the compact baseline](docs/compact-baseline.md).
+
+## License
+
+Original contributions by Malik Abuallatta are licensed under the
+[MIT License](LICENSE). Third-party code, adaptations, dependencies, and assets
+retain their existing licenses and notices. This license does not grant new
+rights to third-party material.
+
+See [SOURCE.md](SOURCE.md), `public/licenses/`, and the asset notices for
+inherited component terms.
