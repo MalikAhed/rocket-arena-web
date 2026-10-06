@@ -2,7 +2,16 @@
   "name": "rocket-arena-web-compact",
   "version": "1.0.0",
   "private": true,
+  "description": "Browser Rocket Arena with online and offline multiplayer modes.",
   "type": "module",
+  "keywords": [
+    "webgl",
+    "multiplayer",
+    "game",
+    "supabase",
+    "playwright"
+  ],
+  "author": "Malik Abuallatta",
   "scripts": {
     "dev": "node --env-file-if-exists=.env tools/serve.mjs",
     "start": "node --env-file-if-exists=.env tools/serve.mjs",
